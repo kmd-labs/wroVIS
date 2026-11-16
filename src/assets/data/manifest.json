@@ -1,0 +1,226 @@
+{
+  "generatedAt": "2026-11-16T15:55:33.364Z",
+  "attribution": "© OpenStreetMap contributors, ODbL 1.0 — https://www.openstreetmap.org/copyright",
+  "source": {
+    "extract": "https://download.geofabrik.de/europe/poland/dolnoslaskie-latest.osm.pbf",
+    "extractLastModified": "Mon, 16 Nov 2026 04:02:24 GMT",
+    "extractMd5": "86a860847559471d810b50ec3bf51496",
+    "boundary": "OSM relation 451516 via Nominatim"
+  },
+  "bbox": [
+    16.8073393,
+    51.0426686,
+    17.1762192,
+    51.2100604
+  ],
+  "tiles": {
+    "file": "wroclaw.pmtiles",
+    "minzoom": 10,
+    "maxzoom": 14,
+    "perZoom": {
+      "10": 4,
+      "11": 8,
+      "12": 18,
+      "13": 51,
+      "14": 165
+    },
+    "layers": [
+      {
+        "id": "buildings",
+        "minzoom": 13,
+        "maxzoom": 14,
+        "fields": {
+          "osm": "String",
+          "class": "String",
+          "type": "String",
+          "levels": "Number",
+          "height": "Number",
+          "hsrc": "String",
+          "name": "String",
+          "year": "Number"
+        },
+        "features": 145155
+      },
+      {
+        "id": "bridge_areas",
+        "minzoom": 12,
+        "maxzoom": 14,
+        "fields": {
+          "osm": "String",
+          "name": "String"
+        },
+        "features": 392
+      },
+      {
+        "id": "water",
+        "minzoom": 10,
+        "maxzoom": 14,
+        "fields": {
+          "osm": "String",
+          "kind": "String",
+          "name": "String"
+        },
+        "features": 824
+      },
+      {
+        "id": "waterways",
+        "minzoom": 10,
+        "maxzoom": 14,
+        "fields": {
+          "osm": "String",
+          "kind": "String",
+          "name": "String"
+        },
+        "features": 5211
+      },
+      {
+        "id": "green",
+        "minzoom": 10,
+        "maxzoom": 14,
+        "fields": {
+          "osm": "String",
+          "kind": "String",
+          "name": "String"
+        },
+        "features": 32456
+      },
+      {
+        "id": "tram_tracks",
+        "minzoom": 10,
+        "maxzoom": 14,
+        "fields": {
+          "osm": "String",
+          "routes": "String",
+          "name": "String"
+        },
+        "features": 1459
+      },
+      {
+        "id": "cycleways",
+        "minzoom": 11,
+        "maxzoom": 14,
+        "fields": {
+          "osm": "String",
+          "kind": "String",
+          "name": "String"
+        },
+        "features": 8266
+      },
+      {
+        "id": "bridges",
+        "minzoom": 11,
+        "maxzoom": 14,
+        "fields": {
+          "osm": "String",
+          "kind": "String",
+          "sub": "String",
+          "name": "String",
+          "bridge": "String",
+          "length_m": "Number"
+        },
+        "features": 1332
+      },
+      {
+        "id": "poi",
+        "minzoom": 12,
+        "maxzoom": 14,
+        "fields": {
+          "osm": "String",
+          "cat": "String",
+          "sub": "String",
+          "name": "String"
+        },
+        "features": 12946
+      }
+    ]
+  },
+  "layers": {
+    "districts": {
+      "features": 48,
+      "bytes": 328965
+    },
+    "buildings": {
+      "features": 145155,
+      "bytes": 67696599
+    },
+    "water": {
+      "features": 824,
+      "bytes": 1171280
+    },
+    "waterways": {
+      "features": 5211,
+      "bytes": 1689807
+    },
+    "green": {
+      "features": 32456,
+      "bytes": 21669768
+    },
+    "bridges": {
+      "features": 1332,
+      "bytes": 375455
+    },
+    "bridge_areas": {
+      "features": 392,
+      "bytes": 292373
+    },
+    "tram_tracks": {
+      "features": 1459,
+      "bytes": 737747
+    },
+    "tram_routes": {
+      "features": 49,
+      "bytes": 1182373
+    },
+    "tram_stops": {
+      "features": 465,
+      "bytes": 86331
+    },
+    "cycleways": {
+      "features": 8266,
+      "bytes": 2587525
+    },
+    "poi": {
+      "features": 12946,
+      "bytes": 2547063
+    }
+  },
+  "audit": {
+    "buildings": {
+      "total": 145155,
+      "withLevels": 49874,
+      "withHeight": 4405,
+      "withStartDate": 548,
+      "withName": 1601,
+      "byClass": {
+        "residential": 46101,
+        "other": 84056,
+        "industrial": 3443,
+        "public": 1149,
+        "commercial": 2938,
+        "religious": 161,
+        "utility": 7307
+      },
+      "byHeightSource": {
+        "height": 4405,
+        "estimated": 92567,
+        "levels": 48183
+      },
+      "coverage": {
+        "levelsPct": 34.4,
+        "heightPct": 3,
+        "startDatePct": 0.4,
+        "namePct": 1.1
+      }
+    },
+    "relationsDropped": 2
+  },
+  "files": {
+    "bridges.geojson": 348956,
+    "city.geojson": 30121,
+    "districts.geojson": 166866,
+    "stats.json": 21313,
+    "tram_routes.geojson": 397739,
+    "tram_stops.geojson": 86331,
+    "wroclaw.pmtiles": 16124934
+  }
+}

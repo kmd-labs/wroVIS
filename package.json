@@ -8,7 +8,8 @@
     "build:gh-pages": "ng build --base-href /wroVIS/",
     "build:og": "node scripts/generate-og.mjs",
     "watch": "ng build --watch --configuration development",
-    "setup:github": "node scripts/setup-github.mjs"
+    "setup:github": "node scripts/setup-github.mjs",
+    "data": "npm --prefix tools/pipeline install --no-audit --no-fund && npm --prefix tools/pipeline run all"
   },
   "private": true,
   "dependencies": {

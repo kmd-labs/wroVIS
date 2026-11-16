@@ -9,10 +9,10 @@ Stan na 2026-11-16. Repo zawiera tylko `README.md`; plan opisuje drogę od puste
 | Obszar | Decyzja | Uzasadnienie |
 | :--- | :--- | :--- |
 | Szkielet aplikacji | `npx github:kmd-labs/design-system` → Angular 21 standalone + submoduł `src/design-system` | Wymóg zadania. Daje gotowy HUD (brand + język, przełącznik widoków, dolny dok z suwakiem), i18n, splash, popupy, tokeny SCSS. |
-| Silnik mapy | **MapLibre GL JS 5** + protokół **PMTiles** | WebGL, wektorowe kafle, wytłaczanie budynków 3D (`fill-extrusion`), `feature-state` do hover. Brak serwera kafli: PMTiles to jeden plik serwowany statycznie (GitHub Pages obsługuje HTTP Range). |
+| Silnik mapy | **MapLibre GL JS 6** + protokół **PMTiles** | WebGL, wektorowe kafle, wytłaczanie budynków 3D (`fill-extrusion`), `feature-state` do hover. Brak serwera kafli: PMTiles to jeden plik serwowany statycznie (GitHub Pages obsługuje HTTP Range). |
 | Mapa bazowa | Kafle wektorowe **OpenFreeMap** (schemat OpenMapTiles, bez klucza API) + własny styl JSON generowany z tokenów KMD | Zero infrastruktury na start. Opcja B (jeśli zależność zewnętrzna przeszkadza): własny `wroclaw-basemap.pmtiles` z Planetiler (Java 21). |
 | Warstwy tematyczne | Własne pliki z OSM: duże warstwy → PMTiles, małe → zminimalizowany GeoJSON w `src/assets/data/` | Pełna kontrola atrybutów (kondygnacje, typ mostu, linia tramwajowa, osiedle). |
-| Pipeline danych | Python 3.12 (`uv`), **QuackOSM** (DuckDB) + GeoPandas → GeoParquet → tippecanoe / GDAL PMTiles | Działa na Windows bez osmium/Dockera (QuackOSM czyta PBF bezpośrednio). Powtarzalne skrypty w `tools/pipeline/`. |
+| Pipeline danych | **Node.js, czysty JS** (`osm-pbf-parser`, `geojson-vt`, `vt-pbf`, turf, własny writer PMTiles v3) w `tools/pipeline/` | Windows Smart App Control na tej maszynie blokuje niepodpisane binaria natywne (numpy, CPython z uv), więc Python/GDAL/tippecanoe odpadają. Jeden toolchain z aplikacją, działa identycznie w CI. |
 | Styl i motyw | Kolory mapy wyłącznie z `ThemeService.getTokenColor()` w `effect()` na `ThemeService.mode()` | Wymóg `AGENTS.md` (brak hex w rendererze, Light domyślnie, Midnight opt-in). |
 | Teksty | Każdy string przez `I18nService` (`en.ts` + `pl.ts`) | Wymóg `AGENTS.md`. |
 | Wdrożenie | GitHub Pages przez wygenerowany `deploy.yml` | Szkielet już to konfiguruje. |
@@ -29,7 +29,7 @@ Obszar: relacja OSM **451516** (granica miasta; area id `3600451516`). Przybliż
 | :--- | ---: | :--- |
 | Budynki (`building=*`) | 145 983 | Warstwa główna; wymaga kafli (PMTiles), nie GeoJSON. |
 | Budynki z `height` | 4 407 (3 %) | Wysokość liczyć z `building:levels` × 3 m, `height` tylko nadpisuje. |
-| Budynki z `building:levels` | nie zmierzono (serwer Overpass przeciążony) | **Zmierzyć w Etapie 1**; od tego zależy jakość widoku 3D. Fallback: heurystyka wg typu budynku. |
+| Budynki z `building:levels` | 49 874 (34,4 %, pomiar z ekstraktu) | Wystarczy do widoku 3D; reszta ma wysokość szacowaną wg klasy i jest tak oznaczona (`hsrc=estimated`). |
 | Budynki z `start_date` | 692 (0,5 %) | **Widok „wiek zabudowy” jako oś czasu nie ma sensu.** Suwak w doku pełni rolę suwaka parametru, nie osi czasu. |
 | Osiedla (`admin_level=9`) | 48 | Komplet 48 osiedli → kartogramy i statystyki per osiedle. |
 | Trasy tramwajowe (`route=tram`) | 49 | Warianty i kierunki; po złączeniu po `ref` ok. 23 linie. |
@@ -43,7 +43,7 @@ Obszar: relacja OSM **451516** (granica miasta; area id `3600451516`). Przybliż
 | POI `amenity` (węzły) | 24 146 | Gęstość usług per osiedle, heatmapa. |
 | POI `shop` (węzły) | 5 358 | j.w. |
 
-Nie zmierzono (timeouty): `leisure=park/garden`, budynki z `building:levels`. Oba wchodzą do audytu w Etapie 1.
+Uzupełnienie z ekstraktu (Etap 1): zieleń łącznie (leisure/landuse/natural) 32 456 poligonów, budynki z `building:levels` 34,4 %. Pełny audyt w `src/assets/data/manifest.json`.
 
 ---
 
@@ -84,34 +84,36 @@ Każdy widok to pionowy wycinek: warstwy mapy + panel doku + legenda + klucze i1
 
 ---
 
-## 4. Pipeline danych (`tools/pipeline/`)
+## 4. Pipeline danych (`tools/pipeline/`, Node.js)
+
+Pierwotnie planowany pipeline w Pythonie (QuackOSM/GeoPandas, GDAL) nie uruchamia się na tej maszynie: Windows Smart App Control blokuje niepodpisane biblioteki natywne (numpy z PyPI, CPython pobrany przez uv). Pipeline jest więc w Node.js bez binariów natywnych i działa tak samo lokalnie i w CI (`npm run data` w katalogu głównym).
 
 ```
 tools/pipeline/
-  pyproject.toml            # uv, Python 3.12: quackosm, geopandas, pyarrow, shapely, pyproj
-  00_fetch.py               # Geofabrik dolnoslaskie-latest.osm.pbf (~150 MB) + granica (relacja 451516)
-  10_extract.py             # QuackOSM: filtr geometrii = granica, filtry tagów per temat → GeoParquet
-  20_transform.py           # GeoPandas: normalizacja atrybutów, klasy budynków, długości (EPSG:2180), join do osiedli
-  30_stats.py               # agregaty per osiedle + globalne → stats.json
-  40_tiles.ps1 / .sh        # tippecanoe (Docker/WSL) lub `ogr2ogr -f PMTiles` (GDAL ≥ 3.8, pip install gdal)
-  manifest.json             # data migawki OSM, liczności, atrybucja ODbL
+  package.json             # npm run all = fetch → extract → stats → tiles (≈ 1,5 min po pierwszym pobraniu)
+  src/00-fetch.mjs         # Geofabrik dolnoslaskie-latest.osm.pbf (MD5) + granica miasta (relacja 451516, Nominatim)
+  src/10-extract.mjs       # jeden przebieg strumieniowy PBF, węzły w bbox miasta, montaż multipoligonów i granic,
+                           # warstwy tematyczne → data/work/*.geojson + audyt pokrycia tagów (25 s)
+  src/30-stats.mjs         # statystyki 48 osiedli (turf: area/union/intersect) → stats.json, districts.geojson (50 s)
+  src/40-tiles.mjs         # geojson-vt + vt-pbf → wroclaw.pmtiles (własny writer PMTiles v3),
+                           # weryfikacja czytnikiem pmtiles, manifest.json (7 s)
+  src/lib/                 # config, osm-geometry (ringi, PIP, haversine, kafle), pmtiles-writer
+  data/                    # raw/ i work/ — ignorowane w git
 ```
 
-Wyjścia do `src/assets/data/`:
+Wyjścia w `src/assets/data/` (commitowane, łącznie 17,2 MB):
 
-| Plik | Format | Zawartość |
-| :--- | :--- | :--- |
-| `buildings.pmtiles` | PMTiles, z12–z16 | 146 k budynków: `class`, `levels`, `height_m`, `name`, `osm_id` |
-| `water.pmtiles` | PMTiles | wody + nazwy |
-| `bridges.geojson` | GeoJSON (uproszczony) | ~1,4 k obiektów: `kind`, `name`, `length_m` |
-| `tram_lines.geojson`, `tram_stops.geojson` | GeoJSON | linie po `ref`, kolor, przystanki |
-| `cycleways.pmtiles` | PMTiles | 3,4 k dróg |
-| `districts.geojson` | GeoJSON (uproszczony ~5 m) | 48 osiedli + metryki |
-| `stats.json` | JSON | agregaty do doku i popupów |
+| Plik | Rozmiar | Zawartość |
+| :--- | ---: | :--- |
+| `wroclaw.pmtiles` | 16,1 MB | z10–z14 (overzoom w MapLibre powyżej 14), 246 kafli; warstwy: `buildings` (z13+), `bridge_areas`, `water`, `waterways`, `green`, `tram_tracks`, `cycleways`, `bridges`, `poi` |
+| `districts.geojson` | 163 kB | 48 osiedli z wpisanymi metrykami |
+| `tram_routes.geojson`, `tram_stops.geojson` | 388 / 84 kB | 49 wariantów tras (25 linii, `ref`, `colour`), 465 przystanków |
+| `bridges.geojson` | 341 kB | 1 332 odcinki na mostach (`kind`: road/tram/rail/foot/other, długość) |
+| `city.geojson`, `stats.json`, `manifest.json` | < 60 kB | granica, statystyki miasta i osiedli, metadane (data ekstraktu, MD5, audyt) |
 
-Budżet rozmiaru: łącznie ≤ 50 MB w repo (limit GitHub 100 MB/plik). Jeśli przekroczone: kafle budowane w CI w `deploy.yml` (workflow pobiera Geofabrik i uruchamia pipeline, wynik trafia tylko do artefaktu Pages) albo hosting PMTiles na Cloudflare R2 z CORS.
+Identyfikatory cech: `id = osmId×2` (way) lub `osmId×2+1` (relation), więc działają z `feature-state`; właściwość `osm` trzyma oryginalny odnośnik. Wysokość budynku: `height` → `building:levels × 3 m` → szacunek wg klasy, z oznaczeniem źródła w `hsrc`.
 
-Narzędzia lokalne (stan na dziś): Node 24.14, Python 3.14 (pipeline pinuje 3.12 przez `uv` ze względu na koła geopandas/duckdb), brak Javy, Dockera, GDAL, osmium, WSL. Do tippecanoe potrzebny Docker Desktop lub WSL2; alternatywa bez nich: `pip install gdal` i `ogr2ogr -f PMTiles`.
+Narzędzia lokalne (stan na dziś): Node 24.14; brak Javy, Dockera, GDAL, osmium, WSL; Python 3.14 jest, ale Smart App Control blokuje natywne koła z PyPI.
 
 ---
 
@@ -153,7 +155,7 @@ Zasady:
 | Etap | Zakres | Gotowe, gdy | Szacunek |
 | :--- | :--- | :--- | ---: |
 | **0. Szkielet** | scaffold CLI, scalenie do tego repo, submoduł, `npm start`, `maplibre-gl` + `pmtiles`, pusta mapa Wrocławia na OpenFreeMap | aplikacja działa lokalnie z HUD i mapą; commit | 0,5 dnia |
-| **1. Dane** | pipeline `00–40`, audyt `building:levels` i parków, pierwsze PMTiles/GeoJSON, `manifest.json` | pliki w `src/assets/data/` w budżecie; raport pokrycia tagów | 2–3 dni |
+| **1. Dane** ✅ | pipeline Node `00–40`, audyt tagów, `wroclaw.pmtiles` + GeoJSON + `stats.json`, `manifest.json` | pliki w `src/assets/data/` (17,2 MB); audyt w `manifest.json` | wykonane 2026-11-16 |
 | **2. Rdzeń mapy** | `MapService`, `style.builder` z tokenów, rejestr warstw, przełącznik widoków, splash z progresem, inspektor hover/klik | styl reaguje na `ThemeService.mode()`; przełączanie widoków bez migotania | 1–2 dni |
 | **3. Widoki MVP** | Zabudowa 3D → Mosty i woda → Transport → Osiedla (każdy: warstwy, dok, legenda, i18n PL/EN, słowniczek) | każdy widok ma suwak, legendę, popup, oba języki | 4–6 dni |
 | **4. Wykończenie** | mobile (`respond-to`, dok ikonowy), a11y (ARIA, klawiatura), wydajność (z-levels, simplify, Lighthouse), checklista `design.md` §8 | Lighthouse ≥ 90 perf/a11y na desktopie; checklista odhaczona | 1–2 dni |
@@ -170,7 +172,7 @@ Zasady:
 | `scripts/setup-github.mjs` i `sync-design-system.yml` zakładają organizację `kmd-labs` i sekrety `KMD_BOT_*` | błędy workflow, próba utworzenia repo w cudzej organizacji | uruchomić CLI z `--no-github`; usunąć `sync-design-system.yml` lub podmienić repo na `marcinwood/wroVIS`; `deploy.yml` działa na `github.token` |
 | Brak `building:levels` w dużej części budynków | płaski lub losowy widok 3D | audyt w Etapie 1; heurystyka wysokości wg klasy; uczciwe oznaczenie „wysokość szacowana” w legendzie |
 | `start_date` w 0,5 % budynków | brak osi czasu zabudowy | suwaki parametrów zamiast osi czasu; oś doby dopiero w widoku `opening_hours` |
-| tippecanoe nie działa natywnie na Windows | blokada generowania PMTiles | Docker Desktop / WSL2 albo GDAL `ogr2ogr -f PMTiles` |
+| Smart App Control blokuje niepodpisane binaria (Python geo, GDAL, tippecanoe) | brak standardowego toolchainu GIS | pipeline w czystym JS (geojson-vt, vt-pbf, własny writer PMTiles) — zrealizowane |
 | Rozmiar PMTiles > limit repo | brak możliwości commitu | budowanie w CI lub R2 (§4) |
 | Overpass ma limity i timeouty | audyt niepowtarzalny | pipeline opiera się na ekstrakcie Geofabrik, Overpass tylko do szybkich sprawdzeń |
 | OpenFreeMap to zewnętrzna usługa | ryzyko dostępności | styl trzyma źródło w jednym miejscu; plan B = Planetiler PMTiles |

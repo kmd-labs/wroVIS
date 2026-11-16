@@ -1,0 +1,32 @@
+{
+  "name": "wrovis-pipeline",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "OpenStreetMap -> PMTiles/GeoJSON data pipeline for wroVIS (Wroclaw). Pure JavaScript, no native binaries.",
+  "scripts": {
+    "fetch": "node src/00-fetch.mjs",
+    "extract": "node --max-old-space-size=6144 src/10-extract.mjs",
+    "stats": "node src/30-stats.mjs",
+    "tiles": "node --max-old-space-size=4096 src/40-tiles.mjs",
+    "all": "npm run fetch && npm run extract && npm run stats && npm run tiles"
+  },
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@mapbox/vector-tile": "^3.0.0",
+    "@turf/area": "^7.4.0",
+    "@turf/bbox": "^7.4.0",
+    "@turf/boolean-point-in-polygon": "^7.4.0",
+    "@turf/centroid": "^7.4.0",
+    "@turf/helpers": "^7.4.0",
+    "@turf/intersect": "^7.4.0",
+    "@turf/length": "^7.4.0",
+    "@turf/simplify": "^7.4.0",
+    "@turf/union": "^7.4.0",
+    "geojson-vt": "^5.0.4",
+    "osm-pbf-parser": "^2.3.0",
+    "pbf": "^5.1.2",
+    "pmtiles": "^4.5.0",
+    "vt-pbf": "^3.1.3"
+  }
+}

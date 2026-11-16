@@ -1,0 +1,37 @@
+@use "variables" as *;
+@use "base";
+
+// ─── MapLibre controls styled as KMD glass UI ────────────────────────────────
+
+// Keep the ODbL attribution clear of the bottom dock (the dock spans the full width on mobile).
+.maplibregl-ctrl-bottom-right {
+  right: var(--dock-offset-x);
+  bottom: var(--dock-offset-bottom);
+
+  @include respond-to("mobile") {
+    bottom: calc(var(--dock-offset-bottom) + 60px);
+  }
+}
+
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl {
+  margin: 0;
+}
+
+.maplibregl-ctrl-attrib {
+  font-family: $font-family;
+  font-size: font-size("xxs");
+  color: color("text-dim");
+  background: color("panel-bg");
+  border: 1px solid color("line");
+  border-radius: radius("pill");
+  backdrop-filter: blur(blur-token("sm"));
+  -webkit-backdrop-filter: blur(blur-token("sm"));
+
+  a {
+    color: color("text-desc");
+  }
+
+  &.maplibregl-compact {
+    background-color: color("panel-bg");
+  }
+}

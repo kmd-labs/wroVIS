@@ -1,0 +1,15 @@
+@use "variables" as *;
+
+:host {
+  position: absolute;
+  inset: 0;
+  display: block;
+  background: color("map-bg");
+}
+
+.map-stage__canvas {
+  width: 100%;
+  height: 100%;
+  // Design-system hook for dimming basemap tiles under the Midnight theme (`none` in light mode).
+  filter: var(--color-map-tile-filter, none);
+}

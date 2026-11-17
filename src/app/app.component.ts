@@ -25,7 +25,9 @@ import {
   TimelineSliderComponent,
   TooltipComponent,
   BreakpointService,
-  SeoService
+  SeoService,
+  SwitcherComponent,
+  SwitcherOption
 } from '@kmd/design-system';
 import { I18nService } from './core/i18n/i18n.service';
 import { Dict, Lang } from './core/i18n/i18n.types';
@@ -33,7 +35,7 @@ import { DataService } from './core/data/data.service';
 import { MapStageComponent } from './core/map/map-stage.component';
 import { MapService } from './core/map/map.service';
 import { VIEWS } from './core/map/layers.registry';
-import { SliderParam, StyleContext, VIEW_IDS, ViewId } from './core/map/map.types';
+import { CyberPalette, SliderParam, StyleContext, VIEW_IDS, ViewId } from './core/map/map.types';
 import { AppState } from './core/state/app.state';
 import { FeatureDetailsComponent } from './features/inspector/feature-details.component';
 import { MapTooltipComponent } from './features/inspector/map-tooltip.component';
@@ -44,14 +46,16 @@ const VIEW_LABEL: Record<ViewId, { title: keyof Dict; desc: keyof Dict }> = {
   buildings: { title: 'viewBuildings', desc: 'viewBuildingsDesc' },
   bridges: { title: 'viewBridges', desc: 'viewBridgesDesc' },
   transit: { title: 'viewTransit', desc: 'viewTransitDesc' },
-  districts: { title: 'viewDistricts', desc: 'viewDistrictsDesc' }
+  districts: { title: 'viewDistricts', desc: 'viewDistrictsDesc' },
+  cyberpunk: { title: 'viewCyberpunk', desc: 'viewCyberpunkDesc' }
 };
 
 const SLIDER_LABEL: Record<SliderParam, keyof Dict> = {
   buildingsMinLevels: 'sliderBuildingsMinLevels',
   bridgesMinLength: 'sliderBridgesMinLength',
   transitRadius: 'sliderTransitRadius',
-  districtsThreshold: 'sliderDistrictsThreshold'
+  districtsThreshold: 'sliderDistrictsThreshold',
+  cyberMinLevels: 'sliderBuildingsMinLevels'
 };
 
 @Component({
@@ -68,7 +72,8 @@ const SLIDER_LABEL: Record<SliderParam, keyof Dict> = {
     TooltipComponent,
     MapStageComponent,
     MapTooltipComponent,
-    LegendComponent
+    LegendComponent,
+    SwitcherComponent
   ],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss'
@@ -188,6 +193,10 @@ export class AppComponent implements AfterViewInit, OnDestroy {
 
   readonly slider = computed(() => VIEWS[this.state.currentView()].slider(this.styleCtx()));
   readonly legend = computed(() => VIEWS[this.state.currentView()].legend(this.styleCtx()));
+  readonly legendWide = computed(() => {
+    const spec = this.legend();
+    return spec.kind === 'categorical' && spec.wide === true;
+  });
 
   readonly sliderValue = computed(() => {
     const spec = this.slider();
@@ -210,6 +219,18 @@ export class AppComponent implements AfterViewInit, OnDestroy {
     return spec.presets.map(v => ({ id: String(v), value: v, label: this.formatValue(v, spec.param), active: v === current }));
   });
 
+  readonly paletteOptions = computed<SwitcherOption<CyberPalette>[]>(() => {
+    const t = this.i18n.t();
+    return [
+      { value: 'neon', label: t.paletteNeon, tooltip: t.paletteNeonHint },
+      { value: 'kmd', label: t.paletteKmd, tooltip: t.paletteKmdHint }
+    ];
+  });
+
+  onPaletteChange(palette: CyberPalette | undefined) {
+    if (palette) this.state.setParam('cyberPalette', palette);
+  }
+
   onSliderChange(value: number) {
     this.state.setParam(this.slider().param, value);
   }
@@ -225,6 +246,7 @@ export class AppComponent implements AfterViewInit, OnDestroy {
     const nf = new Intl.NumberFormat(this.i18n.lang(), { maximumFractionDigits: 1 });
     switch (param) {
       case 'buildingsMinLevels':
+      case 'cyberMinLevels':
         return `${nf.format(value)} ${t.unitLevels}`;
       case 'bridgesMinLength':
       case 'transitRadius':

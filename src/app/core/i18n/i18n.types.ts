@@ -20,10 +20,12 @@ export interface Dict {
   viewBridges: string;
   viewTransit: string;
   viewDistricts: string;
+  viewCyberpunk: string;
   viewBuildingsDesc: string;
   viewBridgesDesc: string;
   viewTransitDesc: string;
   viewDistrictsDesc: string;
+  viewCyberpunkDesc: string;
 
   // Splash / loading states
   splashLoadingMap: string;
@@ -39,6 +41,11 @@ export interface Dict {
   unitLevels: string;
   unitMeters: string;
   presetAll: string;
+  palette: string;
+  paletteNeon: string;
+  paletteKmd: string;
+  paletteNeonHint: string;
+  paletteKmdHint: string;
   legend: string;
   glossary: string;
   glossaryDesc: string;
@@ -50,6 +57,8 @@ export interface Dict {
   bldPublic: string;
   bldIndustrial: string;
   bldOther: string;
+  bldPublicOnly: string;
+  bldReligious: string;
   brRoad: string;
   brTram: string;
   brRail: string;

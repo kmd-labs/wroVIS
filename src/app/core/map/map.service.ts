@@ -18,6 +18,7 @@ import { PickedFeature, StyleContext, ViewId } from './map.types';
 import { VIEWS } from './layers.registry';
 import { buildMapStyle } from './style.builder';
 import { StyleTools } from './style.expr';
+import { StopPulse } from './stop-pulse';
 
 export type MapStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -52,6 +53,7 @@ export class MapService {
   private hovered: PickedFeature | null = null;
   private selectedRef: FeatureIdentifier | null = null;
   private appliedView: ViewId | null = null;
+  private pulse: StopPulse | null = null;
 
   /** Lifecycle of the map: idle → loading → ready (first frame rendered) | error. */
   readonly status = signal<MapStatus>('idle');
@@ -79,6 +81,17 @@ export class MapService {
       if (!this.map || !this.styleLoaded() || this.appliedView === view) return;
       this.appliedView = view;
       untracked(() => this.flyToView(view));
+    });
+
+    // Tram stops pulse while the neon view is active (and the user has not asked for reduced motion).
+    // Only after "ready": a running animation keeps repainting, so MapLibre would never fire the first `idle`.
+    effect(() => {
+      const active = this.state.currentView() === 'cyberpunk' && this.status() === 'ready';
+      untracked(() => {
+        if (!this.pulse) return;
+        if (active && !prefersReducedMotion()) this.zone.runOutsideAngular(() => this.pulse?.start());
+        else this.pulse.stop();
+      });
     });
 
     // Selected feature mirrors into `feature-state` so the style can highlight it.
@@ -121,6 +134,7 @@ export class MapService {
     // ODbL requires a visible OpenStreetMap credit: compact control, styled in styles.scss.
     map.addControl(new AttributionControl({ compact: true }), 'bottom-right');
 
+    this.pulse = new StopPulse(map);
     map.once('style.load', () => this.zone.run(() => this.styleLoaded.set(true)));
     map.once('load', () => {
       this.bindInteractions(map);
@@ -145,6 +159,8 @@ export class MapService {
   }
 
   destroy() {
+    this.pulse?.stop();
+    this.pulse = null;
     this.map?.remove();
     this.map = null;
     this.hovered = null;
@@ -188,8 +204,7 @@ export class MapService {
   private flyToView(view: ViewId) {
     const map = this.map;
     if (!map) return;
-    const reduceMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    this.zone.runOutsideAngular(() => map.easeTo({ ...VIEWS[view].camera, duration: reduceMotion ? 0 : 1100, essential: true }));
+    this.zone.runOutsideAngular(() => map.easeTo({ ...VIEWS[view].camera, duration: prefersReducedMotion() ? 0 : 1100, essential: true }));
   }
 
   // ─── Hover & click ────────────────────────────────────────────────────────
@@ -254,6 +269,10 @@ export class MapService {
     this.selectedRef = selected ? featureRef(selected) : null;
     if (this.selectedRef) map.setFeatureState(this.selectedRef, { selected: true });
   }
+}
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
 function featureRef(pick: PickedFeature): FeatureIdentifier {

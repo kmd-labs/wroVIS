@@ -17,10 +17,12 @@ export const PL: Dict = {
   viewBridges: 'Mosty i woda',
   viewTransit: 'Transport',
   viewDistricts: 'Osiedla',
+  viewCyberpunk: 'CyberPunk',
   viewBuildingsDesc: 'Obrysy budynków wytłoczone wg wysokości i pokolorowane wg funkcji',
   viewBridgesDesc: 'Odra, kanały i sieć mostów wg typu',
   viewTransitDesc: 'Tory tramwajowe, przystanki, drogi rowerowe i zasięg dojścia',
   viewDistrictsDesc: '48 osiedli porównanych jedną miarą',
+  viewCyberpunkDesc: 'Neonowa mapa nocna: budynki wg funkcji, tramwaje, przystanki i drogi rowerowe',
 
   // Splash / loading states
   splashLoadingMap: 'Ładowanie mapy…',
@@ -36,6 +38,11 @@ export const PL: Dict = {
   unitLevels: 'kondygnacji',
   unitMeters: 'm',
   presetAll: 'Wszystkie',
+  palette: 'Paleta',
+  paletteNeon: 'Neon',
+  paletteKmd: 'KMD',
+  paletteNeonHint: 'Czerwień i cyjan na czerni',
+  paletteKmdHint: 'Neon z pomarańczowym akcentem KMD',
   legend: 'Legenda',
   glossary: 'Słowniczek',
   glossaryDesc:
@@ -48,6 +55,8 @@ export const PL: Dict = {
   bldPublic: 'Publiczne i sakralne',
   bldIndustrial: 'Przemysł i infrastruktura',
   bldOther: 'Inne / nieznane',
+  bldPublicOnly: 'Publiczne',
+  bldReligious: 'Sakralne',
   brRoad: 'Most drogowy',
   brTram: 'Most tramwajowy',
   brRail: 'Most kolejowy',

@@ -21,7 +21,7 @@ export const METRIC_LABEL: Record<DistrictMetric, keyof Dict> = {
   template: `
     @let t = i18n.t();
     @if (categorical(); as items) {
-      <ul class="legend legend--categorical" [attr.aria-label]="t.legend">
+      <ul class="legend legend--categorical" [class.legend--wide]="wide()" [attr.aria-label]="t.legend">
         @for (item of items; track item.labelKey) {
           <li class="legend__item">
             <span class="legend__swatch" [class]="'legend__swatch legend__swatch--' + (item.shape ?? 'fill')" [style.--swatch]="'var(--color-' + item.token + ')'" aria-hidden="true"></span>
@@ -55,6 +55,11 @@ export class LegendComponent {
   readonly categorical = computed(() => {
     const spec = this.spec();
     return spec.kind === 'categorical' ? spec.items : null;
+  });
+
+  readonly wide = computed(() => {
+    const spec = this.spec();
+    return spec.kind === 'categorical' && spec.wide === true;
   });
 
   readonly ordinal = computed(() => {

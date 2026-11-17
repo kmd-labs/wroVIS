@@ -1,5 +1,5 @@
 import type { LayerSpecification } from '@maplibre/maplibre-gl-style-spec';
-import { Building2, LayoutGrid, LucideIconData, TramFront, Waves } from 'lucide-angular';
+import { Building2, LayoutGrid, LucideIconData, TramFront, Waves, Zap } from 'lucide-angular';
 import {
   MAP_FONT_BOLD,
   MAP_FONT_REGULAR,
@@ -11,6 +11,7 @@ import {
 import { CameraSpec, DistrictMetric, LegendSpec, SliderSpec, StyleContext, ViewId } from './map.types';
 import { Expr, HOVER, SELECTED, StyleTools, byZoom, highlight, matchGroups, metersToPixels, withVisibility } from './style.expr';
 import { BRIDGE_KIND_SLOT, BUILDING_CLASS_SLOT, CategoricalSlot, categoricalToken, equalBreaks, ordinalTokens } from '../../shared/scales';
+import { CYBER_BUILDING_ROLE, CyberRole, cyberToken } from '../../shared/cyber-palette';
 
 /** Declarative definition of one visualization mode. */
 export interface ViewDefinition {
@@ -369,13 +370,206 @@ const districtsView: ViewDefinition = {
   }
 };
 
+// ─── CyberPunk (neon night map) ─────────────────────────────────────────────
+
+/** Animated by `StopPulse` in MapService; its static paint here is the resting frame. */
+export const CY_PULSE_LAYER = 'cy-stop-pulse';
+
+/** Pulse ring radius at the zoom stops below; the animation scales it up to ×3. */
+export const CY_PULSE_RADIUS: [number, number][] = [
+  [11, 3],
+  [14, 6],
+  [17, 10]
+];
+
+/** Building height in metres (the pipeline always writes `height`, estimated if not tagged). */
+const HEIGHT_EXPR: Expr = ['coalesce', ['get', 'height'], 6];
+
+/**
+ * Category colour whose brightness grows with height: interpolating from the background colour
+ * (at −4 m) to the full neon (at 45 m) leaves low houses dim (~25 % at 10 m) and lets towers glow,
+ * while the hue still tells the category.
+ */
+function glowByHeight(neon: string, bg: string): Expr {
+  return ['interpolate', ['linear'], HEIGHT_EXPR, -4, bg, 45, neon];
+}
+
+function cyberColors(ctx: StyleContext, tools: StyleTools) {
+  const p = ctx.params.cyberPalette;
+  return (role: CyberRole) => tools.color(cyberToken(p, role));
+}
+
+function cyberHighlight(base: Expr | string, c: (role: CyberRole) => string): Expr {
+  return ['case', SELECTED, c('select'), HOVER, c('hover'), base];
+}
+
+const cyberView: ViewDefinition = {
+  id: 'cyberpunk',
+  icon: Zap,
+  camera: { center: [17.0335, 51.1085], zoom: 14.6, pitch: 58, bearing: -28 },
+  slider: () => ({ param: 'cyberMinLevels', min: 0, max: 30, step: 1, presets: [3, 5, 11, 20], unit: 'levels' }),
+  legend: ctx => {
+    const tk = (role: CyberRole) => cyberToken(ctx.params.cyberPalette, role);
+    return {
+      kind: 'categorical',
+      wide: true,
+      items: [
+        { labelKey: 'bldResidential', token: tk('res') },
+        { labelKey: 'trTramTrack', token: tk('tram'), shape: 'line' },
+        { labelKey: 'bldCommercial', token: tk('com') },
+        { labelKey: 'trTramStop', token: tk('stop'), shape: 'point' },
+        { labelKey: 'bldIndustrial', token: tk('ind') },
+        { labelKey: 'trCycleway', token: tk('cycle'), shape: 'line' },
+        { labelKey: 'bldPublicOnly', token: tk('pub') },
+        { labelKey: 'bldReligious', token: tk('rel') },
+        { labelKey: 'bldOther', token: tk('oth') }
+      ]
+    };
+  },
+  interactive: ['cy-stops', 'cy-bld', 'cy-tram'],
+  layers: (ctx, tools) => {
+    const c = cyberColors(ctx, tools);
+    const bg = c('bg');
+    const groups = new Map<CyberRole, string[]>();
+    for (const [cls, role] of Object.entries(CYBER_BUILDING_ROLE)) groups.set(role, [...(groups.get(role) ?? []), cls]);
+    const classColor: unknown[] = ['match', ['get', 'class']];
+    for (const [role, classes] of groups) classColor.push(classes, glowByHeight(c(role), bg));
+    classColor.push(glowByHeight(c('oth'), bg));
+    const min = ctx.params.cyberMinLevels;
+
+    const glowLine = (id: string, sourceLayer: string, color: string, widths: [number, number][], minzoom = 10): LayerSpecification => ({
+      id,
+      type: 'line',
+      source: SRC_WROVIS,
+      'source-layer': sourceLayer,
+      minzoom,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': color,
+        'line-opacity': 0.35,
+        'line-width': byZoom(widths),
+        'line-blur': byZoom(widths.map(([z, w]) => [z, w * 0.6] as [number, number]))
+      }
+    });
+
+    return [
+      {
+        id: 'cy-water',
+        type: 'fill',
+        source: SRC_WROVIS,
+        'source-layer': 'water',
+        paint: { 'fill-color': c('water'), 'fill-antialias': false }
+      },
+      {
+        id: 'cy-waterways',
+        type: 'line',
+        source: SRC_WROVIS,
+        'source-layer': 'waterways',
+        filter: ['match', ['get', 'kind'], ['river', 'canal'], true, false],
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': c('waterway'), 'line-width': byZoom([[10, 1], [16, 4]]) }
+      },
+      glowLine('cy-cycle-glow', 'cycleways', c('cycle'), [[11, 3], [14, 6], [17, 12]], 11),
+      {
+        id: 'cy-cycle',
+        type: 'line',
+        source: SRC_WROVIS,
+        'source-layer': 'cycleways',
+        minzoom: 11,
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': c('cycle'), 'line-opacity': 0.9, 'line-width': byZoom([[11, 0.5], [14, 1.1], [17, 2.4]]) }
+      },
+      glowLine('cy-tram-glow', 'tram_tracks', c('tram'), [[10, 5], [14, 10], [17, 20]]),
+      {
+        id: 'cy-tram',
+        type: 'line',
+        source: SRC_WROVIS,
+        'source-layer': 'tram_tracks',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': cyberHighlight(c('tram'), c), 'line-width': byZoom([[10, 1], [14, 2], [17, 4]]) }
+      },
+      {
+        id: 'cy-bld',
+        type: 'fill-extrusion',
+        source: SRC_WROVIS,
+        'source-layer': 'buildings',
+        minzoom: 13,
+        ...(min > 0 ? { filter: ['>=', LEVELS_EXPR, min] as Expr } : {}),
+        paint: {
+          'fill-extrusion-color': cyberHighlight(classColor as Expr, c),
+          'fill-extrusion-height': HEIGHT_EXPR,
+          'fill-extrusion-base': 0,
+          'fill-extrusion-opacity': 0.9,
+          'fill-extrusion-vertical-gradient': true
+        }
+      },
+      {
+        id: CY_PULSE_LAYER,
+        type: 'circle',
+        source: SRC_TRAM_STOPS,
+        minzoom: 11,
+        paint: {
+          'circle-radius': byZoom(CY_PULSE_RADIUS, 1),
+          'circle-color': c('stop'),
+          'circle-opacity': 0,
+          'circle-stroke-color': c('stop'),
+          'circle-stroke-width': 1.5,
+          'circle-stroke-opacity': 0,
+          'circle-pitch-alignment': 'map'
+        }
+      },
+      {
+        id: 'cy-stop-glow',
+        type: 'circle',
+        source: SRC_TRAM_STOPS,
+        minzoom: 11,
+        paint: {
+          'circle-radius': byZoom([[11, 5], [14, 9], [17, 15]], 1),
+          'circle-color': c('stop'),
+          'circle-opacity': 0.3,
+          'circle-blur': 1
+        }
+      },
+      {
+        id: 'cy-stops',
+        type: 'circle',
+        source: SRC_TRAM_STOPS,
+        minzoom: 11,
+        paint: {
+          'circle-radius': byZoom([[11, 2], [14, 3.5], [17, 6]], 1),
+          'circle-color': cyberHighlight(c('stop'), c),
+          'circle-stroke-color': bg,
+          'circle-stroke-width': 1
+        }
+      },
+      {
+        id: 'cy-stop-labels',
+        type: 'symbol',
+        source: SRC_TRAM_STOPS,
+        minzoom: 15,
+        layout: {
+          'text-field': ['upcase', ['get', 'name']],
+          'text-font': MAP_FONT_BOLD,
+          'text-size': byZoom([[15, 9], [17, 11]], 1),
+          'text-letter-spacing': 0.12,
+          'text-anchor': 'top',
+          'text-offset': [0, 0.9],
+          'text-optional': true
+        },
+        paint: { 'text-color': c('stop'), 'text-halo-color': bg, 'text-halo-width': 1.4 }
+      }
+    ];
+  }
+};
+
 // ─── Registry ───────────────────────────────────────────────────────────────
 
 export const VIEWS: Record<ViewId, ViewDefinition> = {
   buildings: buildingsView,
   bridges: bridgesView,
   transit: transitView,
-  districts: districtsView
+  districts: districtsView,
+  cyberpunk: cyberView
 };
 
 /** All thematic layers of every view; only the active view's layers are visible (switching never rebuilds sources). */

@@ -54,6 +54,16 @@
             <span class="dock__title">{{ viewTitle() }}</span>
             <span class="dock__desc">{{ viewDesc() }}</span>
           </div>
+          @if (state.currentView() === 'cyberpunk') {
+            <app-switcher
+              class="dock__switcher"
+              size="sm"
+              [options]="paletteOptions()"
+              [value]="state.params().cyberPalette"
+              [ariaLabel]="t.palette"
+              (valueChange)="onPaletteChange($event)">
+            </app-switcher>
+          }
         </div>
 
         <div class="dock__slider">
@@ -84,7 +94,7 @@
         </div>
       </div>
 
-      <div class="dock__legend">
+      <div class="dock__legend" [class.dock__legend--wide]="legendWide()">
         <span class="dock__legend-title">{{ t.legend }}</span>
         <app-legend [spec]="legend()"></app-legend>
       </div>

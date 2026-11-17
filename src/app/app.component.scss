@@ -168,6 +168,15 @@
     border-left: 1px solid color("line");
   }
 
+  &__legend--wide {
+    width: 300px;
+  }
+
+  &__switcher {
+    flex: none;
+    margin-left: auto;
+  }
+
   &__legend-title {
     font-size: font-size("xxs");
     font-weight: font-weight("semibold");

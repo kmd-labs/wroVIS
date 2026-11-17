@@ -60,7 +60,7 @@ export function describeFeature(pick: PickedFeature, t: Dict, lang: Lang, stats:
   const rows: DetailRow[] = [];
   const id = pick.layerId;
 
-  if (id.startsWith('bld-')) {
+  if (id.startsWith('bld-') || id === 'cy-bld') {
     const cls = str(p['class']) || 'other';
     const classLabel = t[BUILDING_CLASS_LABEL[cls] ?? 'classOther'];
     const levels = typeof p['levels'] === 'number' ? p['levels'] : null;
@@ -87,10 +87,10 @@ export function describeFeature(pick: PickedFeature, t: Dict, lang: Lang, stats:
     return { title: name || t.inspBridge, subtitle, rows, osmUrl };
   }
 
-  if (id === 'tr-stops' || id === 'tr-tracks') {
+  if (id === 'tr-stops' || id === 'tr-tracks' || id === 'cy-stops' || id === 'cy-tram') {
     const routes = str(p['routes']).split(';').filter(Boolean);
     if (routes.length) rows.push({ label: t.propRoutes, value: routes.join(', ') });
-    const label = id === 'tr-stops' ? t.inspTramStop : t.inspTramTrack;
+    const label = id.endsWith('stops') ? t.inspTramStop : t.inspTramTrack;
     const subtitle = routes.length ? `${label} · ${routes.join(', ')}` : label;
     return { title: name || label, subtitle, rows, osmUrl };
   }

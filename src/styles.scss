@@ -1,6 +1,61 @@
 @use "variables" as *;
 @use "base";
 
+// ─── Neon (CyberPunk) view palettes ──────────────────────────────────────────
+// Read by the map style builder through ThemeService.getTokenColor('cy-<palette>-<role>').
+// The neon view is always dark, so these tokens are the same in Light and Midnight.
+
+$cyber-palettes: (
+  // Red & cyan on near-black
+  "neon": (
+    "bg": #05080d,
+    "road": #0e1820,
+    "road-major": #17323d,
+    "water": #062631,
+    "waterway": #0b4a5a,
+    "outline": #ff2a4d,
+    "res": #ff2a4d,
+    "com": #b44dff,
+    "ind": #ff8a1f,
+    "pub": #22f5a0,
+    "rel": #ffd84a,
+    "oth": #5d7184,
+    "tram": #00f0ff,
+    "cycle": #d4ff2a,
+    "stop": #fcee0a,
+    "hover": #ffffff,
+    "select": #fcee0a
+  ),
+  // Neon with the KMD orange accent
+  "kmd": (
+    "bg": #06090f,
+    "road": #111823,
+    "road-major": #1d2a3b,
+    "water": #08223a,
+    "waterway": #0f4462,
+    "outline": #d37400,
+    "res": #d37400,
+    "com": #3d8bff,
+    "ind": #9b6bff,
+    "pub": #2ee6a0,
+    "rel": #ffd166,
+    "oth": #56637a,
+    "tram": #00e5ff,
+    "cycle": #b6ff3b,
+    "stop": #ff9a1f,
+    "hover": #ffffff,
+    "select": #00e5ff
+  )
+);
+
+:root {
+  @each $palette, $roles in $cyber-palettes {
+    @each $role, $value in $roles {
+      --color-cy-#{$palette}-#{$role}: #{$value};
+    }
+  }
+}
+
 // ─── MapLibre controls styled as KMD glass UI ────────────────────────────────
 
 // Keep the ODbL attribution clear of the bottom dock (the dock spans the full width on mobile).

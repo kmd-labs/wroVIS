@@ -3,9 +3,14 @@ import type { Lang } from '../i18n/i18n.types';
 import type { CityStats } from '../data/stats.model';
 
 /** Primary visualization modes, switched from the top-right view pill. */
-export type ViewId = 'buildings' | 'bridges' | 'transit' | 'districts';
+export type ViewId = 'buildings' | 'bridges' | 'transit' | 'districts' | 'cyberpunk';
 
-export const VIEW_IDS: readonly ViewId[] = ['buildings', 'bridges', 'transit', 'districts'];
+export const VIEW_IDS: readonly ViewId[] = ['buildings', 'bridges', 'transit', 'districts', 'cyberpunk'];
+
+/** Colour sets of the neon (CyberPunk) view: red & cyan on black, or neon with the KMD orange accent. */
+export type CyberPalette = 'neon' | 'kmd';
+
+export const CYBER_PALETTES: readonly CyberPalette[] = ['neon', 'kmd'];
 
 /** Choropleth metrics of the districts view (numeric keys of `DistrictStats`). */
 export type DistrictMetric = 'buildings_per_km2' | 'buildings' | 'poi_per_km2' | 'green_pct' | 'tram_stops';
@@ -21,6 +26,9 @@ export interface ViewParams {
   /** Districts at or above this metric value are highlighted. */
   districtsThreshold: number;
   districtsMetric: DistrictMetric;
+  /** Minimum number of storeys a building needs to stay visible in the neon view. */
+  cyberMinLevels: number;
+  cyberPalette: CyberPalette;
 }
 
 export const DEFAULT_VIEW_PARAMS: ViewParams = {
@@ -28,7 +36,9 @@ export const DEFAULT_VIEW_PARAMS: ViewParams = {
   bridgesMinLength: 0,
   transitRadius: 400,
   districtsThreshold: 0,
-  districtsMetric: 'buildings_per_km2'
+  districtsMetric: 'buildings_per_km2',
+  cyberMinLevels: 0,
+  cyberPalette: 'neon'
 };
 
 /** Everything the style builder needs to produce the complete current map style. */
@@ -40,8 +50,8 @@ export interface StyleContext {
   stats: CityStats | null;
 }
 
-/** Numeric dock parameters (the slider never drives the metric selector). */
-export type SliderParam = Exclude<keyof ViewParams, 'districtsMetric'>;
+/** Numeric dock parameters (the slider never drives the metric or palette selectors). */
+export type SliderParam = Exclude<keyof ViewParams, 'districtsMetric' | 'cyberPalette'>;
 
 /** Declarative description of the dock slider of a view. */
 export interface SliderSpec {
@@ -60,6 +70,8 @@ export type LegendLabelKey =
   | 'bldPublic'
   | 'bldIndustrial'
   | 'bldOther'
+  | 'bldPublicOnly'
+  | 'bldReligious'
   | 'brRoad'
   | 'brTram'
   | 'brRail'
@@ -80,7 +92,7 @@ export interface LegendCategory {
 }
 
 export type LegendSpec =
-  | { kind: 'categorical'; items: LegendCategory[] }
+  | { kind: 'categorical'; items: LegendCategory[]; /** Two-column layout for long legends. */ wide?: boolean }
   | { kind: 'ordinal'; tokens: string[]; low: number; high: number; metric: DistrictMetric };
 
 /** Camera preset applied with `easeTo` when a view is entered. */

@@ -17,10 +17,12 @@ export const EN: Dict = {
   viewBridges: 'Bridges & water',
   viewTransit: 'Transport',
   viewDistricts: 'Districts',
+  viewCyberpunk: 'CyberPunk',
   viewBuildingsDesc: 'Building footprints extruded by height and coloured by use',
   viewBridgesDesc: 'The Odra, canals and the bridge network by type',
   viewTransitDesc: 'Tram tracks, stops, cycleways and walking range',
   viewDistrictsDesc: 'The 48 districts compared on one metric',
+  viewCyberpunkDesc: 'Neon night map: buildings by use, trams, stops and cycleways',
 
   // Splash / loading states
   splashLoadingMap: 'Loading map…',
@@ -36,6 +38,11 @@ export const EN: Dict = {
   unitLevels: 'storeys',
   unitMeters: 'm',
   presetAll: 'All',
+  palette: 'Palette',
+  paletteNeon: 'Neon',
+  paletteKmd: 'KMD',
+  paletteNeonHint: 'Red and cyan on black',
+  paletteKmdHint: 'Neon with the KMD orange accent',
   legend: 'Legend',
   glossary: 'Glossary',
   glossaryDesc:
@@ -48,6 +55,8 @@ export const EN: Dict = {
   bldPublic: 'Public & sacred',
   bldIndustrial: 'Industrial & utilities',
   bldOther: 'Other / unknown',
+  bldPublicOnly: 'Public',
+  bldReligious: 'Sacred',
   brRoad: 'Road bridge',
   brTram: 'Tram bridge',
   brRail: 'Railway bridge',

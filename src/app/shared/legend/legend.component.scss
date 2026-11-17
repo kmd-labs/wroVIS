@@ -1,0 +1,98 @@
+@use "variables" as *;
+
+:host {
+  display: block;
+  min-width: 0;
+}
+
+.legend {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: font-size("xs");
+  color: color("text-desc");
+
+  &__item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  &__label {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__swatch {
+    flex: none;
+    width: 14px;
+    height: 10px;
+    border-radius: 3px;
+    background: var(--swatch);
+    border: 1px solid color("line");
+
+    &--line {
+      height: 3px;
+      border-radius: radius("pill");
+      border: 0;
+    }
+
+    &--dash {
+      height: 3px;
+      border: 0;
+      border-radius: radius("pill");
+      background: repeating-linear-gradient(90deg, var(--swatch) 0 5px, transparent 5px 8px);
+    }
+
+    &--point {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: color("panel-bg-solid");
+      border: 2px solid var(--swatch);
+    }
+  }
+
+  &--ordinal {
+    gap: 4px;
+    min-width: 150px;
+  }
+
+  &__metric {
+    font-weight: font-weight("medium");
+    color: color("text-main");
+  }
+
+  &__ramp {
+    display: flex;
+    gap: 2px;
+    height: 8px;
+  }
+
+  &__step {
+    flex: 1;
+    border-radius: 2px;
+  }
+
+  &__range {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--font-family-mono);
+    font-size: font-size("xxs");
+    color: color("text-dim");
+  }
+
+  @include respond-to("tablet") {
+    &--categorical {
+      flex-direction: row;
+      flex-wrap: wrap;
+      column-gap: 14px;
+      row-gap: 4px;
+    }
+  }
+}

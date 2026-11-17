@@ -1,6 +1,6 @@
 # wroVIS — plan interaktywnej wizualizacji Wrocławia na danych OSM
 
-Stan na 2026-11-16. Repo zawiera tylko `README.md`; plan opisuje drogę od pustego repo do wdrożonej aplikacji.
+**Stan na 2026-11-17:** Etapy 0–3 i 5 zrobione, Etap 4 (wykończenie) w części. Aplikacja działa na GitHub Pages: <https://kmd-labs.github.io/wroVIS/> (`main` = `e584f58`). Pięć widoków, zasięg pieszy, planer trasy rowerowej, ranking osiedli. Dziennik prac i kolejne kroki: §10.
 
 ---
 
@@ -9,15 +9,16 @@ Stan na 2026-11-16. Repo zawiera tylko `README.md`; plan opisuje drogę od puste
 | Obszar | Decyzja | Uzasadnienie |
 | :--- | :--- | :--- |
 | Szkielet aplikacji | `npx github:kmd-labs/design-system` → Angular 21 standalone + submoduł `src/design-system` | Wymóg zadania. Daje gotowy HUD (brand + język, przełącznik widoków, dolny dok z suwakiem), i18n, splash, popupy, tokeny SCSS. |
-| Silnik mapy | **MapLibre GL JS 6** + protokół **PMTiles** | WebGL, wektorowe kafle, wytłaczanie budynków 3D (`fill-extrusion`), `feature-state` do hover. Brak serwera kafli: PMTiles to jeden plik serwowany statycznie (GitHub Pages obsługuje HTTP Range). |
-| Mapa bazowa | Kafle wektorowe **OpenFreeMap** (schemat OpenMapTiles, bez klucza API) + własny styl JSON generowany z tokenów KMD | Zero infrastruktury na start. Opcja B (jeśli zależność zewnętrzna przeszkadza): własny `wroclaw-basemap.pmtiles` z Planetiler (Java 21). |
-| Warstwy tematyczne | Własne pliki z OSM: duże warstwy → PMTiles, małe → zminimalizowany GeoJSON w `src/assets/data/` | Pełna kontrola atrybutów (kondygnacje, typ mostu, linia tramwajowa, osiedle). |
-| Pipeline danych | **Node.js, czysty JS** (`osm-pbf-parser`, `geojson-vt`, `vt-pbf`, turf, własny writer PMTiles v3) w `tools/pipeline/` | Windows Smart App Control na tej maszynie blokuje niepodpisane binaria natywne (numpy, CPython z uv), więc Python/GDAL/tippecanoe odpadają. Jeden toolchain z aplikacją, działa identycznie w CI. |
-| Styl i motyw | Kolory mapy wyłącznie z `ThemeService.getTokenColor()` w `effect()` na `ThemeService.mode()` | Wymóg `AGENTS.md` (brak hex w rendererze, Light domyślnie, Midnight opt-in). |
-| Teksty | Każdy string przez `I18nService` (`en.ts` + `pl.ts`) | Wymóg `AGENTS.md`. |
-| Wdrożenie | GitHub Pages przez wygenerowany `deploy.yml` | Szkielet już to konfiguruje. |
+| Silnik mapy | **MapLibre GL JS 6** + protokół **PMTiles** | WebGL, wektorowe kafle, wytłaczanie budynków 3D (`fill-extrusion`), `feature-state` do hover i zaznaczeń. Brak serwera kafli: PMTiles to jeden plik serwowany statycznie (GitHub Pages obsługuje HTTP Range). |
+| Mapa bazowa | Kafle wektorowe **OpenFreeMap** (schemat OpenMapTiles, bez klucza API) + własny styl JSON generowany z tokenów KMD | Zero infrastruktury. Opcja B (jeśli zależność zewnętrzna przeszkadza): własny `wroclaw-basemap.pmtiles` z Planetiler (Java 21). |
+| Warstwy tematyczne | Własne pliki z OSM: duże warstwy → PMTiles, małe → zminimalizowany GeoJSON, grafy sieci → binaria gzip w `src/assets/data/` | Pełna kontrola atrybutów (kondygnacje, typ i długość mostu, adres, linia tramwajowa, osiedle). |
+| Pipeline danych | **Node.js, czysty JS** (`osm-pbf-parser`, `geojson-vt`, `vt-pbf`, turf, własny writer PMTiles v3) w `tools/pipeline/` | Windows Smart App Control na tej maszynie blokuje niepodpisane binaria natywne (numpy, CPython z uv), więc Python/GDAL/tippecanoe odpadają. Jeden toolchain z aplikacją. |
+| Analizy sieciowe | Grafy pieszy i rowerowy budowane w pipeline, **Dijkstra w przeglądarce** (`core/walk/walk-graph.ts`) | Bez backendu: zasięg pieszy liczy się w 1–7 ms, odcinek trasy rowerowej w 1–3 ms. Liczone tylko na klik / zmianę suwaka, nic nie działa w tle. |
+| Styl i motyw | Kolory mapy wyłącznie z tokenów (`ThemeService.getTokenColor()`), styl przebudowywany w `effect()` i nakładany przez `setStyle(…, { diff: true })` | Wymóg `AGENTS.md` (brak hex w rendererze, Light domyślnie, Midnight opt-in). Palety Neon View jako tokeny `--color-cy-*` w `styles.scss`. |
+| Teksty | Każdy string przez `I18nService` (`en.ts` + `pl.ts`) | Wymóg `AGENTS.md`; typ `Dict` wymusza parytet języków. |
+| Wdrożenie | GitHub Pages przez `deploy.yml` ze szkieletu (push do `main` + co 6 h) | Repo **publiczne** (prywatne repo organizacji na darmowym planie nie ma Pages), źródło Pages: GitHub Actions. |
 
-Poza zakresem MVP: deck.gl, three.js, backend, routing, dane spoza OSM.
+Poza zakresem: deck.gl, three.js, backend, dane na żywo (MPK), dane spoza OSM. Routing jest w zakresie tylko jako analiza w przeglądarce (zasięg pieszy, trasa rowerowa).
 
 ---
 
@@ -49,79 +50,89 @@ Uzupełnienie z ekstraktu (Etap 1): zieleń łącznie (leisure/landuse/natural) 
 
 ## 3. Widoki aplikacji (przełącznik top-right) i rola doku
 
-Każdy widok to pionowy wycinek: warstwy mapy + panel doku + legenda + klucze i18n + hasła w słowniczku.
+Każdy widok to pionowy wycinek: warstwy mapy + panel doku + legenda + klucze i18n + hasła w słowniczku. We wszystkich widokach z legendą kategorii **pozycje legendy są pastylkami**, które wyłączają swoją kategorię (filtr) albo warstwę (`legendLayers`); stan trwa do przeładowania strony. Suwak doku jest przypięty do dołu doku.
 
-### MVP (4 widoki)
+### Zrobione (wdrożone 2026-11-17)
 
-1. **Zabudowa 3D** (`view: buildings`)
-   - Wytłaczanie budynków (`fill-extrusion`), wysokość = `height` lub `levels × 3`.
-   - Kolor wg klasy budynku (mieszkalny / usługowy / przemysłowy / sakralny / publiczny / inny) lub wg liczby kondygnacji (przełącznik `app-switcher` w doku).
-   - Suwak: **czas dojścia pieszo** (5–20 min, presety 5/10/15/20). Klik w budynek lub mapę uruchamia zasięg pieszy (5 km/h) i kartę budynku obok niego.
-   - Hover: nazwa, kondygnacje, typ. Klik: karta budynku przypięta obok (adres, co jest w środku, zabytek) + link do obiektu na osm.org.
+1. **Zabudowa 3D** (`view: buildings`) — widok startowy
+   - Wytłaczanie budynków (`fill-extrusion`), wysokość `height` → `levels × 3 m` → szacunek wg klasy; kolor wg 5 grup funkcji.
+   - Klik w budynek: **karta przypięta obok budynku** (styl KMD, bez modalnego popupu): adres (tagi `addr:*` albo punkt adresowy w obrysie), co jest w środku (POI w obrysie), kondygnacje, wysokość ze źródłem, architekt, styl, zabytek, Wikipedia, link do OSM.
+   - Przełącznik **„Zasięg pieszy”** w doku (domyślnie wyłączony, pamiętany w `wrovis.walk`). Włączony: suwak **czasu dojścia 5–20 min**, klik uruchamia „falę” zasięgu (5 km/h) po grafie pieszym, ulice w fioletowych pasmach 5/10/15/20 min, liczniki 8 kategorii miejsc w zasięgu z czasem do najbliższego, **budynki poza zasięgiem szare** (`feature-state.wt`). Wyłączony: tylko karta budynku, bez suwaka.
 
 2. **Mosty i woda** (`view: bridges`)
-   - Odra, kanały i wyspy jako wyróżniona warstwa wody; mosty (`man_made=bridge` + drogi z `bridge=*`) kolorowane wg typu: drogowy / tramwajowy / kolejowy / kładka piesza i rowerowa.
-   - Suwak: **mosty do X m** (rośnie liczba mostów). Toggle per typ mostu. Licznik mostów w doku.
-   - Popup: nazwa, typ, długość (policzona w pipeline w EPSG:2180).
+   - Odra, kanały, obrysy mostów; odcinki na mostach kolorowane wg typu (drogowy / tramwajowy / kładka / kolejowy / inny).
+   - Suwak **„mosty o długości do X m”** (w prawo przybywa dłuższych, na końcu skali wszystkie) z **licznikiem mostów i odcinków** przy suwaku, zgodnym z mapą i pastylkami (637 mostów; do 50 m 481, do 100 m 566, do 200 m 608, do 300 m 622). Most = odcinki pogrupowane w pipeline (`bid`, `blen`).
 
-3. **Transport** (`view: transit`)
-   - Linie tramwajowe (po `ref`, kolor z tagu `colour` lub palety kategorialnej), przystanki, ścieżki rowerowe (toggle), autobusy (toggle, domyślnie off).
-   - Suwak: **zasięg dojścia do przystanku tramwajowego** (100–1000 m) → bufory liczone w przeglądarce (`@turf/buffer`) lub prekomputowane dla kroków 100 m.
-   - Statystyka w doku: % powierzchni osiedli w zasięgu.
+3. **Transport** (`view: transit`) — przełącznik trybu w doku:
+   - **Zasięg przystanków:** tory i przystanki tramwajowe, drogi rowerowe, suwak promienia dojścia 100–1000 m wokół przystanków.
+   - **Trasa rowerowa:** suwak zastępuje planer — klik dodaje punkty A, B, C…, punkty można przeciągać (trasa przelicza się na żywo), Cofnij / Wyczyść, km łącznie i per odcinek. Trasa **wyłącznie po drogach rowerowych połączonych w OSM** (tryb ścisły, bez łączenia przerw); punkt przyciągany do fragmentu sieci wspólnego dla obu końców odcinka; brak połączenia = czerwona przerywana linia i komunikat.
 
 4. **Osiedla** (`view: districts`)
-   - Kartogram 48 osiedli; metryka z `app-switcher`: liczba budynków, gęstość POI, udział zieleni, liczba przystanków tramwajowych.
-   - Suwak: **próg metryki** (podświetla osiedla powyżej progu).
-   - Klik: popup z kartą osiedla i mini-wykresem (porównanie do mediany miasta).
+   - Kartogram 48 osiedli, **16 miar** do wyboru (lista w doku, otwiera się do góry), w tym statystyki ulic: gęstość km/km², udział ulic z tramwajem, strefy piesze, udział ulic ≤ 30 km/h (z pokryciem tagu `maxspeed`).
+   - Suwak progu miary; karta osiedla z medianą miasta przy każdej wartości.
+   - **Panel „Ranking osiedli”** po lewej (świadome odstępstwo od HUD, §5): akordeon 16 atrybutów zsynchronizowany z kartogramem, ranking 48 osiedli, najechanie obrysowuje osiedle, klik przybliża i otwiera kartę; na telefonie arkusz z przycisku w doku.
 
-### Rozszerzenia (po MVP, w kolejności)
+5. **Neon View** (`view: cyberpunk` w kodzie)
+   - Nocna mapa: przyciemniona baza bez etykiet, budynki w 6 neonowych kategoriach z jasnością rosnącą z wysokością, świecące tory tramwajowe i drogi rowerowe, przystanki ze statycznym halo i nazwami od z15.
+   - Dwie palety (Neon / KMD), przełącznik w doku, pamiętane w `wrovis.cyberPalette`; suwak min. kondygnacji.
+   - Karta obiektu i dok w stylu **„neonowe szkło”**: zaokrąglone rogi KMD, gradientowa obwódka (kolor kategorii → wyróżnienie palety), miękki kolorowy cień, pastylka kategorii, Inter zwykłą wielkością liter. Celowo bez ścinanych rogów, linii skanu, monospace wersalikami i pulsowania — za bardzo kojarzyły się z UI znanej gry. Nazwa widoku neutralna (zamiast „CyberPunk”, „Night City View”).
 
-**Zrobione poza planem:** **zasięg pieszy („miasto 15 minut”) w widoku Zabudowa 3D**: klik w budynek lub mapę → Dijkstra po grafie pieszym (5 km/h) w przeglądarce, ulice w zasięgu w pasmach 5/10/15/20 min, „fala” przez ~1 s po kliknięciu, liczniki miejsc w zasięgu i czas do najbliższego w doku, dane budynku w karcie przypiętej obok (bez modalnego popupu). Suwak doku to czas dojścia (5–20 min); suwak min. kondygnacji usunięty. Graf pobiera się przy pierwszym kliknięciu; liczy się tylko na klik i zmianę suwaka, nic nie działa w tle. Zasięg włącza przełącznik „Zasięg pieszy” w doku (domyślnie wyłączony, pamiętany); przy aktywnym zasięgu budynki poza nim są szare (`feature-state.wt`, liczone dla wczytanych kafli i po każdym przesunięciu mapy).
+### Z pierwotnego planu, jeszcze niezrobione
 
-**Legenda jako pastylki:** każda pozycja legendy kategorii (Zabudowa 3D, Mosty, Transport, Neon View) wyłącza swoją kategorię (filtr) lub warstwę (`legendLayers`); stan tylko w sesji. Skala Osiedli bez zmian.
+- Zabudowa 3D: przełącznik koloru wg liczby kondygnacji.
+- Transport: autobusy (warstwa opcjonalna), statystyka „% powierzchni osiedli w zasięgu przystanków”.
+- Osiedla: mini-wykres porównania z medianą w karcie osiedla.
+- Popup mostu z długością całego mostu (dziś karta pokazuje długość odcinka).
 
-**Mosty i woda:** suwak pokazuje mosty **do** X m (w prawo przybywa dłuższych, na końcu skali wszystkie); obok liczba mostów i odcinków, zgodna z mapą i pastylkami. Mosty grupuje pipeline (`lib/bridge-groups.mjs`: ta sama nazwa albo końce bez nazwy ≤ 30 m) i zapisuje w każdym odcinku `bid` i `blen` (długość mostu = najdłuższy odcinek), więc filtr działa na całe mosty: 637 mostów, do 50 m 481, do 100 m 566, do 200 m 608, do 300 m 622. **Transport → Trasa rowerowa:** przełącznik w doku zamienia suwak na planer: klik dodaje punkty A, B, C…, punkty można przeciągać, Cofnij/Wyczyść; trasa wyłącznie po drogach rowerowych połączonych w OSM (`cycle.bin.gz`, 494 km, 70 kB; 74 % w jednej spójnej sieci), km łącznie i per odcinek; brak połączenia = przerywana linia i komunikat.
+### Rozszerzenia (kolejność propozycji)
 
+1. **Linki do udostępniania** — stan w URL (widok, kamera, zaznaczenie, paleta), przycisk „Udostępnij”. ~0,5 dnia.
+2. **Kinowe wejście i „Wycieczka po Wrocławiu”** — przelot kamery po splashu, Play w doku przelatuje po 8–10 ikonach miasta z podpisami; poprawione wysokości landmarków. 1–2 dni.
+3. **Wyszukiwarka adresów** — 55 tys. adresów i 12 tys. ulic, indeks ładowany przy pierwszym użyciu. 1–2 dni.
+4. **Szlif** — nachodzące etykiety presetów suwaka (3 / 5 kondygnacji), animowane liczby w doku, płynne przenikanie widoków, lazy-load MapLibre (bundle 1,4 MB).
 5. **Zieleń** — parki, lasy, ogródki działkowe, cmentarze; udział zieleni per osiedle.
-6. **Usługi (POI)** — heatmapa wg kategorii (gastronomia, edukacja, zdrowie, kultura, handel).
-7. **„Co jest otwarte o godzinie X”** — parser `opening_hours` (biblioteka `opening_hours`), suwak jako oś doby z Play. Jedyny widok z prawdziwą osią czasu.
-8. **Wiek zabudowy** — tylko jeśli pokrycie `start_date` zostanie uzupełnione; dziś 0,5 %.
-9. **Motyw Midnight** — wyłącznie w popupie ustawień (reguła `AGENTS.md`), zapis `wrovis.theme` w `localStorage`.
+6. **Usługi (POI)** — heatmapa wg kategorii.
+7. **„Co jest otwarte o godzinie X”** — parser `opening_hours`, suwak jako oś doby.
+8. **Wiek zabudowy** — tylko jeśli pokrycie `start_date` wzrośnie (dziś 0,4 %).
+9. **Motyw Midnight** — wyłącznie w popupie ustawień (reguła `AGENTS.md`), zapis `wrovis.theme`.
 
 ---
 
 ## 4. Pipeline danych (`tools/pipeline/`, Node.js)
 
-Pierwotnie planowany pipeline w Pythonie (QuackOSM/GeoPandas, GDAL) nie uruchamia się na tej maszynie: Windows Smart App Control blokuje niepodpisane biblioteki natywne (numpy z PyPI, CPython pobrany przez uv). Pipeline jest więc w Node.js bez binariów natywnych i działa tak samo lokalnie i w CI (`npm run data` w katalogu głównym).
+Pierwotnie planowany pipeline w Pythonie (QuackOSM/GeoPandas, GDAL) nie uruchamia się na tej maszynie: Windows Smart App Control blokuje niepodpisane biblioteki natywne. Pipeline jest w Node.js bez binariów natywnych.
 
 ```
 tools/pipeline/
   package.json             # npm run all = fetch → extract → stats → tiles (≈ 1,5 min po pierwszym pobraniu)
   src/00-fetch.mjs         # Geofabrik dolnoslaskie-latest.osm.pbf (MD5) + granica miasta (relacja 451516, Nominatim)
-  src/10-extract.mjs       # jeden przebieg strumieniowy PBF, węzły w bbox miasta, montaż multipoligonów i granic,
-                           # warstwy tematyczne → data/work/*.geojson + audyt pokrycia tagów (25 s)
-  src/30-stats.mjs         # statystyki 48 osiedli (turf: area/union/intersect) → stats.json, districts.geojson (50 s)
-  src/40-tiles.mjs         # geojson-vt + vt-pbf → wroclaw.pmtiles (własny writer PMTiles v3),
-                           # weryfikacja czytnikiem pmtiles, manifest.json (7 s)
-  src/lib/                 # config, osm-geometry (ringi, PIP, haversine, kafle), pmtiles-writer
+  src/10-extract.mjs       # jeden przebieg strumieniowy PBF → warstwy tematyczne data/work/*.geojson + audyt (≈ 27 s):
+                           #   budynki (+ adres z punktów adresowych w obrysie, POI w środku, architekt, zabytek, Wikipedia),
+                           #   ulice (klasa, nazwa, flaga `tram` liczona geometrycznie), mosty pogrupowane (`bid`, `blen`),
+                           #   graf pieszy walk.bin.gz i rowerowy cycle.bin.gz
+  src/30-stats.mjs         # statystyki 48 osiedli (16 miar, w tym ulice) → stats.json, districts.geojson (≈ 50 s)
+  src/40-tiles.mjs         # geojson-vt + vt-pbf → wroclaw.pmtiles (własny writer PMTiles v3), weryfikacja, manifest.json (≈ 7 s)
+  src/lib/                 # config, osm-geometry, pmtiles-writer, walk-graph (format binarny grafów), bridge-groups
   data/                    # raw/ i work/ — ignorowane w git
 ```
 
-Wyjścia w `src/assets/data/` (commitowane, łącznie 17,2 MB):
+Wyjścia w `src/assets/data/` (commitowane, łącznie 21 MB):
 
 | Plik | Rozmiar | Zawartość |
 | :--- | ---: | :--- |
-| `wroclaw.pmtiles` | 19,1 MB | z10–z14 (overzoom w MapLibre powyżej 14), 248 kafli; warstwy: `buildings` (z13+), `bridge_areas`, `water`, `waterways`, `green`, `tram_tracks`, `cycleways`, `bridges`, `streets` (z12+), `poi` |
-| `districts.geojson` | 163 kB | 48 osiedli z wpisanymi metrykami |
-| `tram_routes.geojson`, `tram_stops.geojson` | 388 / 84 kB | 49 wariantów tras (25 linii, `ref`, `colour`), 465 przystanków |
-| `bridges.geojson` | 341 kB | 1 332 odcinki na mostach (`kind`: road/tram/rail/foot/other, długość) |
-| `city.geojson`, `stats.json`, `manifest.json` | < 60 kB | granica, statystyki miasta i osiedli, metadane (data ekstraktu, MD5, audyt) |
-| `cycle.bin.gz` | 70 kB | graf dróg rowerowych dla planera trasy w widoku Transport (ten sam format co `walk.bin.gz`) |
-| `walk.bin.gz` | 1,5 MB | graf pieszy dla zasięgu „miasto 15 minut” w Zabudowie 3D (202 tys. węzłów, 7 754 km chodników, ścieżek i ulic, 13 tys. miejsc w 8 kategoriach); binarny, gzip, ładowany przy pierwszym kliknięciu. Format w `tools/pipeline/src/lib/walk-graph.mjs` |
+| `wroclaw.pmtiles` | 19,2 MB | z10–z14 (overzoom powyżej 14), 248 kafli; warstwy: `buildings` (z13+, z adresem i POI), `bridge_areas`, `water`, `waterways`, `green`, `tram_tracks`, `cycleways`, `bridges`, `streets` (z12+), `poi` |
+| `walk.bin.gz` | 1,5 MB | graf pieszy: 202 tys. węzłów, 263 tys. krawędzi, 7 754 km, 13 tys. miejsc w 8 kategoriach; ładowany przy pierwszym kliknięciu w Zabudowie 3D |
+| `cycle.bin.gz` | 70 kB | graf dróg rowerowych: 494 km, 265 składowych (74 % w jednej sieci); ładowany przy włączeniu planera |
+| `districts.geojson` | 173 kB | 48 osiedli z wpisanymi metrykami |
+| `bridges.geojson` | 375 kB | 1 332 odcinki na mostach (`kind`, `length_m`, `bid`, `blen`) |
+| `tram_routes.geojson`, `tram_stops.geojson` | 398 / 86 kB | 49 wariantów tras (25 linii), 465 przystanków |
+| `city.geojson`, `stats.json`, `manifest.json` | < 70 kB | granica, statystyki miasta i osiedli, metadane i audyt |
 
-Identyfikatory cech: `id = osmId×2` (way) lub `osmId×2+1` (relation), więc działają z `feature-state`; właściwość `osm` trzyma oryginalny odnośnik. Wysokość budynku: `height` → `building:levels × 3 m` → szacunek wg klasy, z oznaczeniem źródła w `hsrc`.
+Format grafów (`lib/walk-graph.mjs` ↔ `core/walk/walk-graph.ts`): węzły w kolejności Mortona, współrzędne `Uint16` w pudełku kwantyzacji równym faktycznemu zasięgowi danych, krawędzie i geometria kodowane różnicowo, całość gzip (rozpakowanie w przeglądarce przez `DecompressionStream`).
 
-Narzędzia lokalne (stan na dziś): Node 24.14; brak Javy, Dockera, GDAL, osmium, WSL; Python 3.14 jest, ale Smart App Control blokuje natywne koła z PyPI.
+Identyfikatory cech: `id = osmId×2` (way) lub `osmId×2+1` (relation), więc działają z `feature-state`; właściwość `osm` trzyma oryginalny odnośnik.
+
+Narzędzia lokalne: Node 24.14; brak Javy, Dockera, GDAL, osmium, WSL, `gh`; Python 3.14 jest, ale Smart App Control blokuje natywne koła z PyPI.
 
 ---
 
@@ -129,47 +140,45 @@ Narzędzia lokalne (stan na dziś): Node 24.14; brak Javy, Dockera, GDAL, osmium
 
 ```
 src/app/
-  app.component.*            # HUD ze szkieletu: brand, język, przełącznik widoków, dok, popup, tooltip
-  core/i18n/                 # ze szkieletu; klucze per widok, słowniczek
+  app.component.*            # HUD: brand, język, przełącznik widoków, dok (suwak / liczniki / planer / przełączniki), legenda
+  core/i18n/                 # Dict + en.ts / pl.ts
   core/map/
-    map.service.ts           # instancja MapLibre (poza NgZone), rejestracja protokołu pmtiles, padding pod HUD
-    style.builder.ts         # styl JSON z tokenów ThemeService (bg-deep, map-bg, line, accent…) + warstwy bazowe
-    layers.registry.ts       # deklaratywne definicje warstw per widok (source, layer, legenda, interakcje)
-  core/data/
-    data.service.ts          # ładowanie GeoJSON/stats.json, progres do SplashService
-    stats.model.ts
-  core/state/
-    app.state.ts             # sygnały: currentView, sliderValue, hoveredFeature, selectedDistrict, toggles
-  features/
-    buildings/  bridges/  transit/  districts/     # po jednym: *.view.ts (warstwy) + *.dock.ts (panel doku)
-    inspector/               # hover tooltip (canvas pill wg reguł design.md) + popup szczegółów (PopupService)
-  shared/
-    legend/                  # legenda kategorialna / sekwencyjna z tokenów (skill dataviz)
-    scales.ts                # skale kolorów budowane z tokenów palety KMD
+    map.service.ts           # MapLibre poza NgZone, protokół pmtiles, padding pod HUD i panel rankingu, hover/klik
+    style.builder.ts         # pełny styl z tokenów; źródła runtime z live-sources.ts
+    layers.registry.ts       # deklaratywne widoki: warstwy, legenda, suwak, interakcje, legendLayers, modeHidden
+    live-sources.ts          # ostatnie dane źródeł zapisywanych w runtime (zasięg, trasa), żeby przebudowa stylu ich nie kasowała
+    map.types.ts, map.config.ts, style.expr.ts
+  core/data/                 # data.service (GeoJSON/stats), bridge-count.service, stats.model
+  core/state/app.state.ts    # sygnały: widok, parametry, zaznaczenie, zasięg pieszy, tryb Transportu, punkty trasy, ukryte pozycje legendy
+  core/walk/                 # walk-graph.ts (dekodowanie grafu, Dijkstra, zasięg, trasa), walk.service.ts (zasięg pieszy)
+  core/bike/                 # bike-route.service.ts (planer trasy rowerowej, przeciąganie punktów)
+  features/inspector/        # tooltip, popup szczegółów, karta obiektu przypięta do punktu (KMD / neonowe szkło), formatowanie
+  features/districts/        # panel „Ranking osiedli”
+  shared/                    # legenda (pastylki), skale kolorów, palety Neon View
 ```
 
 Zasady:
-- Mapa żyje w `.stage` (100vw × 100vh); HUD nad nią; `map.setPadding` uwzględnia `--dock-clearance` i wysokość nagłówka.
-- Zmiana widoku = przełączenie zestawu warstw w `layers.registry` (bez niszczenia mapy) + wymiana panelu doku.
-- `app-timeline-slider` ze szkieletu służy jako suwak parametru; `min/max/step/markers` konfigurowane per widok.
-- Hover przez `feature-state`, nie przez przebudowę warstw; filtrowanie suwakiem przez `setFilter` / wyrażenia.
+- Mapa żyje w `.stage` (100vw × 100vh); HUD nad nią; padding kamery uwzględnia nagłówek, dok i panel rankingu.
+- Zmiana widoku = przełączenie widoczności warstw z `layers.registry` (bez niszczenia mapy) + wymiana zawartości doku.
+- Hover i zaznaczenia przez `feature-state`; filtry przez wyrażenia w stylu.
+- Źródła GeoJSON wypełniane w runtime (`setData`) muszą trafiać też do `live-sources.ts`, inaczej `setStyle(diff)` po zmianie języka, motywu czy legendy je wyczyści.
+- Nic nie animuje mapy w tle: obliczenia na klik / zmianę suwaka, krótkie animacje (fala zasięgu ≈ 1 s) same się kończą.
 - Atrybucja `© OpenStreetMap contributors` (ODbL) zawsze widoczna: kompaktowa kontrolka MapLibre + wpis w słowniczku.
-- **Odstępstwo od trzystrefowego HUD (`AGENTS.md` §2), świadome:** widok Osiedla ma lewy panel „Ranking osiedli” między nagłówkiem a dokiem (`features/districts/district-ranking.component.ts`). To panel danych, nie ustawień: akordeon 16 atrybutów zsynchronizowany z miarą kartogramu, ranking 48 osiedli, najechanie wyróżnia osiedle na mapie. Kamera dostaje lewy padding równy szerokości panelu. Na telefonie panel jest arkuszem otwieranym przyciskiem w doku.
-- SEO/OG przez `SeoService`, własny `og-image` przez `scripts/generate-og.mjs`.
+- **Odstępstwo od trzystrefowego HUD (`AGENTS.md` §2), świadome:** widok Osiedla ma lewy panel „Ranking osiedli” między nagłówkiem a dokiem. To panel danych, nie ustawień; na telefonie arkusz otwierany z doku.
 
 ---
 
 ## 6. Etapy i kryteria ukończenia
 
-| Etap | Zakres | Gotowe, gdy | Szacunek |
-| :--- | :--- | :--- | ---: |
-| **0. Szkielet** ✅ | scaffold CLI, scalenie do tego repo, submoduł, `npm start`, `maplibre-gl` + `pmtiles`, pusta mapa Wrocławia na OpenFreeMap | aplikacja działa lokalnie z HUD i mapą; commit | 0,5 dnia |
-| **1. Dane** ✅ | pipeline Node `00–40`, audyt tagów, `wroclaw.pmtiles` + GeoJSON + `stats.json`, `manifest.json` | pliki w `src/assets/data/` (17,2 MB); audyt w `manifest.json` | wykonane 2026-11-16 |
-| **2. Rdzeń mapy** ✅ | `MapService`, `style.builder` z tokenów, rejestr warstw, przełącznik widoków, splash z progresem, inspektor hover/klik | styl reaguje na `ThemeService.mode()`; przełączanie widoków bez migotania | 1–2 dni |
-| **3. Widoki MVP** (w toku: warstwy 4 widoków w `layers.registry`) | Zabudowa 3D → Mosty i woda → Transport → Osiedla (każdy: warstwy, dok, legenda, i18n PL/EN, słowniczek) | każdy widok ma suwak, legendę, popup, oba języki | 4–6 dni |
-| **4. Wykończenie** | mobile (`respond-to`, dok ikonowy), a11y (ARIA, klawiatura), wydajność (z-levels, simplify, Lighthouse), checklista `design.md` §8 | Lighthouse ≥ 90 perf/a11y na desktopie; checklista odhaczona | 1–2 dni |
-| **5. Wdrożenie** | `deploy.yml`, README z atrybucją ODbL/Geofabrik/OpenFreeMap, OG image, tag `v1.0.0` | strona na GitHub Pages działa z czystej przeglądarki | 0,5 dnia |
-| Rozszerzenia | widoki 5–9 z §3 | każdy jako osobny PR | wg potrzeb |
+| Etap | Zakres | Stan |
+| :--- | :--- | :--- |
+| **0. Szkielet** ✅ | scaffold CLI, submoduł, MapLibre + PMTiles, mapa Wrocławia na OpenFreeMap | 2026-11-16 |
+| **1. Dane** ✅ | pipeline Node `00–40`, audyt tagów, PMTiles + GeoJSON + statystyki | 2026-11-16 |
+| **2. Rdzeń mapy** ✅ | `MapService`, styl z tokenów, rejestr warstw, przełącznik widoków, splash, inspektor | 2026-11-17 (PR #1) |
+| **3. Widoki MVP** ✅ | 4 widoki + Neon View, legendy, karty, i18n PL/EN | 2026-11-17 (PR #2); luki w §3 |
+| **4. Wykończenie** ◐ | mobile: dok, karty i ranking sprawdzone na 400×800; a11y: ARIA w legendzie, rankingu, kartach, Esc; **brak**: audyt Lighthouse, checklista `design.md` §8, lazy-load MapLibre | w toku |
+| **5. Wdrożenie** ✅ | GitHub Pages działa (<https://kmd-labs.github.io/wroVIS/>); **brak**: README z pełną atrybucją, własny OG image, tag `v1.0.0` | 2026-11-17 |
+| Rozszerzenia | §3 „Rozszerzenia” | wg potrzeb, każde jako osobny PR |
 
 ---
 
@@ -177,15 +186,17 @@ Zasady:
 
 | Ryzyko | Skutek | Obejście |
 | :--- | :--- | :--- |
-| CLI szkieletu tworzy **nowy katalog** i robi `git init`; odmawia pracy w niepustym katalogu | nie da się scaffoldować bezpośrednio w `wroVIS` | scaffold do katalogu tymczasowego, skopiowanie plików (bez `.git`) do repo, ponowne `git submodule add` (§8) |
-| `scripts/setup-github.mjs` i `sync-design-system.yml` zakładają organizację `kmd-labs` i sekrety `KMD_BOT_*` | błędy workflow, próba utworzenia repo w cudzej organizacji | uruchomić CLI z `--no-github`; usunąć `sync-design-system.yml` lub podmienić repo na `marcinwood/wroVIS`; `deploy.yml` działa na `github.token` |
-| Brak `building:levels` w dużej części budynków | płaski lub losowy widok 3D | audyt w Etapie 1; heurystyka wysokości wg klasy; uczciwe oznaczenie „wysokość szacowana” w legendzie |
-| `start_date` w 0,5 % budynków | brak osi czasu zabudowy | suwaki parametrów zamiast osi czasu; oś doby dopiero w widoku `opening_hours` |
-| Smart App Control blokuje niepodpisane binaria (Python geo, GDAL, tippecanoe) | brak standardowego toolchainu GIS | pipeline w czystym JS (geojson-vt, vt-pbf, własny writer PMTiles) — zrealizowane |
-| Rozmiar PMTiles > limit repo | brak możliwości commitu | budowanie w CI lub R2 (§4) |
-| Overpass ma limity i timeouty | audyt niepowtarzalny | pipeline opiera się na ekstrakcie Geofabrik, Overpass tylko do szybkich sprawdzeń |
-| OpenFreeMap to zewnętrzna usługa | ryzyko dostępności | styl trzyma źródło w jednym miejscu; plan B = Planetiler PMTiles |
-| Reguły `AGENTS.md` (hex w rendererze, hardcoded stringi) | odrzucenie w review | `style.builder` tylko z tokenów; typ `Dict` wymusza parytet `en.ts`/`pl.ts` |
+| Brak `building:levels` w ⅔ budynków | płaski widok 3D | wysokość szacowana wg klasy, źródło wysokości pokazywane w karcie budynku |
+| `start_date` w 0,4 % budynków | brak osi czasu zabudowy | suwaki parametrów zamiast osi czasu |
+| Smart App Control blokuje natywne narzędzia GIS | brak standardowego toolchainu | pipeline w czystym JS — zrealizowane |
+| Rozmiar danych (21 MB, PMTiles 19 MB) | dłuższe pierwsze ładowanie, granica wygody dla repo | grafy ładowane leniwie; przy dalszym wzroście PMTiles budować w CI lub trzymać w R2 |
+| OpenFreeMap to zewnętrzna usługa | ryzyko dostępności | źródło w jednym miejscu stylu; plan B = Planetiler PMTiles |
+| **Pages w prywatnym repo organizacji** | `Create Pages site failed … Resource not accessible by integration` | repo publiczne + Settings → Pages → Source: GitHub Actions — zrealizowane 2026-11-17 |
+| Sekrety `KMD_BOT_*` niedostępne dla repo | synchronizacja design systemu i auto-włączanie Pages zawodzą | po upublicznieniu działa; w razie regresji zainstalować aplikację KMD Bot w repo |
+| Sieć dróg rowerowych w OSM jest poszatkowana (265 składowych) | tryb ścisły nadkłada drogi lub nie znajduje trasy | komunikat o braku połączenia; opcjonalnie łączenie przerw ≤ 25 m |
+| Skojarzenia z marką gry (nazwa, UI ramek) | ryzyko prawne/wizerunkowe | nazwa „Neon View”, styl „neonowe szkło”; w komunikacji „w stylu cyberpunka” małą literą, bez nazw i grafik gry |
+| Checkout na Windows zamienia końce linii na CRLF | wieloliniowe podmiany w skryptach zawodzą | skrypty normalizują `\r\n` → `\n`; rozważyć `.gitattributes` (`* text=auto eol=lf`) |
+| Reguły `AGENTS.md` (hex w rendererze, stringi) | odrzucenie w review | styl tylko z tokenów; typ `Dict` wymusza parytet `en.ts`/`pl.ts` |
 
 ---
 
@@ -219,3 +230,36 @@ Weryfikacja: build dev i prod bez ostrzeżeń; headless Edge (puppeteer-core) na
 - Ekstrakt: Geofabrik (`download.geofabrik.de/europe/poland/dolnoslaskie.html`).
 - Mapa bazowa: OpenFreeMap (dane OSM, styl własny).
 - Szkielet: `kmd-labs/design-system`, Apache 2.0.
+
+---
+
+## 10. Dziennik postępu
+
+### 2026-11-16
+- Etap 0: szkielet KMD, MapLibre 6 + PMTiles, mapa Wrocławia (§8).
+- Etap 1: pipeline Node `00–40`, warstwy tematyczne i statystyki osiedli.
+
+### 2026-11-17
+- Etap 2 (PR #1): rdzeń mapy, rejestr warstw, inspektor, legenda.
+- Widok neonowy (najpierw „CyberPunk”): budynki w 6 kategoriach z jasnością wg wysokości, świecące tory i drogi rowerowe, 2 palety; dok i karta w stylu neonowym.
+- Dane budynków w karcie: adresy (38 % budynków, w tym z punktów adresowych w obrysie), POI w środku, zabytek, architekt, Wikipedia. Warstwa `streets` z flagą tramwaju.
+- Osiedla: statystyki ulic, 16 miar, panel rankingu z podświetleniem na mapie.
+- Zasięg pieszy („miasto 15 minut”): graf pieszy w pipeline, Dijkstra w przeglądarce, fala, liczniki miejsc; potem przeniesiony do Zabudowy 3D (osobny widok usunięty), z przełącznikiem i wyszarzaniem budynków poza zasięgiem; suwak kondygnacji w Zabudowie 3D usunięty.
+- Legenda jako pastylki we wszystkich widokach z kategoriami.
+- Mosty: licznik mostów i odcinków, suwak „do X m”, grupowanie mostów w pipeline.
+- Transport: planer trasy rowerowej po połączonych drogach rowerowych.
+- Wdrożenie (PR #2 + merge do `main`): przyczyną nieudanych buildów było prywatne repo bez Pages; po upublicznieniu i ustawieniu źródła Pages na GitHub Actions wdrożenia przechodzą.
+- Widok neonowy przemianowany na „Neon View”; ramki zmienione na „neonowe szkło”, pulsowanie przystanków zastąpione statycznym halo (mniej skojarzeń z grą, brak animacji w tle).
+
+### Odrzucone (z powodem)
+- **Pozycje tramwajów i autobusów na żywo (MPK):** endpoint MPK działa, ale jest nieoficjalny i bez CORS (wymagałby proxy, np. Cloudflare Worker); oficjalne otwarte dane CUI (CC0) też bez CORS i z wątpliwą aktualnością. Odłożone.
+- **„Doba tramwajów” (odtwarzanie rozkładu GTFS):** zbudowane i wycofane — ciągła animacja ~4 tys. kursów wyraźnie spowalniała aplikację, a dane nie są na żywo.
+- **Przyciski obrotu/nachylenia kamery:** zbędne, gesty MapLibre wystarczają (prawy przycisk / Ctrl + przeciąganie, dwa palce).
+- **Nazwy etykiet ulic unoszących się nad ulicą:** do ponownego rozważenia na bazie warstwy `streets`.
+
+### Następne kroki
+1. Linki do udostępniania (stan w URL).
+2. Kinowe wejście i wycieczka po ikonach miasta.
+3. Etap 4: audyt Lighthouse, poprawki a11y, nachodzące etykiety presetów suwaka, lazy-load MapLibre.
+4. Etap 5: README z atrybucją (ODbL, Geofabrik, OpenFreeMap), własny OG image, tag `v1.0.0`.
+5. Wyszukiwarka adresów.

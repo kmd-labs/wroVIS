@@ -10,20 +10,102 @@ export const PL: Dict = {
   // Top HUD & Navigation
   changeLanguage: 'Język',
   chooseView: 'Widok',
-  viewPrimary: 'Przegląd',
-  viewSecondary: 'Analiza',
   stageAriaLabel: 'Interaktywna mapa Wrocławia',
+
+  // Views
+  viewBuildings: 'Zabudowa 3D',
+  viewBridges: 'Mosty i woda',
+  viewTransit: 'Transport',
+  viewDistricts: 'Osiedla',
+  viewBuildingsDesc: 'Obrysy budynków wytłoczone wg wysokości i pokolorowane wg funkcji',
+  viewBridgesDesc: 'Odra, kanały i sieć mostów wg typu',
+  viewTransitDesc: 'Tory tramwajowe, przystanki, drogi rowerowe i zasięg dojścia',
+  viewDistrictsDesc: '48 osiedli porównanych jedną miarą',
 
   // Splash / loading states
   splashLoadingMap: 'Ładowanie mapy…',
+  splashLoadingData: 'Ładowanie danych…',
   splashReady: 'Gotowe',
   splashMapError: 'Nie udało się wczytać mapy. Sprawdź połączenie i odśwież stronę.',
 
-  // Bottom Dock & Glossary
-  timelineLabel: 'Oś czasu',
+  // Bottom Dock
+  sliderBuildingsMinLevels: 'Pokaż budynki o co najmniej',
+  sliderBridgesMinLength: 'Pokaż mosty dłuższe niż',
+  sliderTransitRadius: 'Zasięg dojścia do przystanku tramwajowego',
+  sliderDistrictsThreshold: 'Wyróżnij osiedla od',
+  unitLevels: 'kondygnacji',
+  unitMeters: 'm',
+  presetAll: 'Wszystkie',
+  legend: 'Legenda',
   glossary: 'Słowniczek',
-  glossaryDesc: 'Dane mapy © autorzy OpenStreetMap (ODbL). Kafle mapy bazowej: OpenFreeMap.',
-  close: 'Zamknij'
+  glossaryDesc:
+    'Dane mapy © autorzy OpenStreetMap (ODbL). Kafle mapy bazowej: OpenFreeMap. Wysokość budynku pochodzi z tagu height, a gdy go brak — z liczby kondygnacji (po 3 m) lub z szacunku wg klasy budynku.',
+  close: 'Zamknij',
 
-  // Application-specific keys:
+  // Legend labels
+  bldResidential: 'Mieszkalne',
+  bldCommercial: 'Handel i biura',
+  bldPublic: 'Publiczne i sakralne',
+  bldIndustrial: 'Przemysł i infrastruktura',
+  bldOther: 'Inne / nieznane',
+  brRoad: 'Most drogowy',
+  brTram: 'Most tramwajowy',
+  brRail: 'Most kolejowy',
+  brFoot: 'Kładka piesza i rowerowa',
+  brOther: 'Inne',
+  brWater: 'Woda',
+  trTramTrack: 'Tor tramwajowy',
+  trTramStop: 'Przystanek tramwajowy',
+  trCycleway: 'Droga rowerowa',
+  trWalkRadius: 'Zasięg dojścia',
+
+  // District metrics
+  metricBuildingsPerKm2: 'Budynki na km²',
+  metricBuildings: 'Liczba budynków',
+  metricPoiPerKm2: 'Usługi na km²',
+  metricGreenPct: 'Udział zieleni',
+  metricTramStops: 'Przystanki tramwajowe',
+
+  // Inspector
+  inspBuilding: 'Budynek',
+  inspBridge: 'Most',
+  inspTramStop: 'Przystanek tramwajowy',
+  inspTramTrack: 'Tor tramwajowy',
+  inspDistrict: 'Osiedle',
+  inspNoName: 'Bez nazwy',
+  classResidential: 'mieszkalny',
+  classCommercial: 'usługowy',
+  classIndustrial: 'przemysłowy',
+  classPublic: 'publiczny',
+  classReligious: 'sakralny',
+  classUtility: 'techniczny',
+  classOther: 'inny',
+  propClass: 'Klasa',
+  propOsmType: 'Tag OSM',
+  propLevels: 'Kondygnacje',
+  propHeight: 'Wysokość',
+  propYear: 'Rok budowy',
+  propKind: 'Typ',
+  propLength: 'Długość',
+  propRoutes: 'Linie',
+  propArea: 'Powierzchnia',
+  propBuildings: 'Budynki',
+  propBuildingsPerKm2: 'Budynki na km²',
+  propPoiPerKm2: 'Usługi na km²',
+  propGreenPct: 'Zieleń',
+  propWaterPct: 'Woda',
+  propTramStops: 'Przystanki tramwajowe',
+  propBridges: 'Odcinki mostów',
+  propLevelsMean: 'Średnio kondygnacji',
+  propMaxHeight: 'Najwyższy budynek',
+  heightMeasured: 'zmierzona',
+  heightFromLevels: 'z liczby kondygnacji',
+  heightEstimated: 'szacowana',
+  cityMedian: 'mediana miasta',
+  openInOsm: 'Otwórz w OpenStreetMap',
+  unitStoreysShort: 'kond.',
+
+  // Attribution
+  dataAttribution: 'Dane mapy © autorzy OpenStreetMap (ODbL) · Mapa bazowa: OpenFreeMap',
+  dataExtractDate: 'Ekstrakt OSM'
 };

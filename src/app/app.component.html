@@ -5,9 +5,10 @@
 
   <!-- Fullscreen Visualization Stage: MapLibre canvas -->
   <app-map-stage class="stage" role="region" [attr.aria-label]="t.stageAriaLabel"></app-map-stage>
+  <app-map-tooltip></app-map-tooltip>
 
   <!-- Top HUD: Left Logotype + Language, Right View Switcher -->
-  <header class="header" [class.header--popup-open]="isPopupOpen()">
+  <header class="header" #header [class.header--popup-open]="isPopupOpen()">
     <div class="header__left">
       <app-brand
         [appName]="'wroVIS'"
@@ -34,32 +35,59 @@
           align="right"
           [fullWidth]="true"
           [options]="viewOptions()"
-          [value]="currentView()"
+          [value]="state.currentView()"
           [icon]="currentViewIcon()"
           [ariaLabel]="t.chooseView"
-          (valueChange)="currentView.set($event)">
+          (valueChange)="state.setView($event)">
         </app-dropdown>
       </div>
     </div>
   </header>
 
-  <!-- Bottom Dock: Sliders & Glossaries -->
+  <!-- Bottom Dock: view context, parameter slider with presets, legend and glossary -->
   <footer class="dock-wrap">
-    <div class="dock glass-panel">
-      <div class="dock__slider">
-        <app-timeline-slider
-          [min]="-100"
-          [max]="100"
-          [step]="1"
-          [value]="sliderValue()"
-          [ariaLabel]="t.timelineLabel"
-          (valueChange)="sliderValue.set($event)">
-        </app-timeline-slider>
+    <div class="dock glass-panel" #dock>
+      <div class="dock__main">
+        <div class="dock__head">
+          <lucide-icon class="dock__icon" [img]="currentViewIcon()" [size]="16"></lucide-icon>
+          <div class="dock__titles">
+            <span class="dock__title">{{ viewTitle() }}</span>
+            <span class="dock__desc">{{ viewDesc() }}</span>
+          </div>
+        </div>
+
+        <div class="dock__slider">
+          <div class="dock__slider-head">
+            <span class="dock__slider-label">{{ sliderLabel() }}</span>
+            <span class="dock__value">{{ sliderReadout() }}</span>
+          </div>
+          <app-timeline-slider
+            [min]="slider().min"
+            [max]="slider().max"
+            [step]="slider().step"
+            [value]="sliderValue()"
+            [markers]="sliderMarkers()"
+            [trackGradient]="sliderRail"
+            [ariaLabel]="sliderLabel()"
+            (valueChange)="onSliderChange($event)"
+            (markerClick)="onMarkerClick($event)">
+            <app-button
+              timelineAction
+              variant="ghost"
+              [iconOnly]="true"
+              [ariaLabel]="t.glossary"
+              [titleText]="t.glossary"
+              (btnClick)="openGlossary()">
+              <lucide-icon [img]="bookOpenIcon" [size]="15"></lucide-icon>
+            </app-button>
+          </app-timeline-slider>
+        </div>
       </div>
-      <app-button variant="ghost" (btnClick)="openGlossary()">
-        <lucide-icon [img]="bookOpenIcon" [size]="15"></lucide-icon>
-        <span>{{ t.glossary }}</span>
-      </app-button>
+
+      <div class="dock__legend">
+        <span class="dock__legend-title">{{ t.legend }}</span>
+        <app-legend [spec]="legend()"></app-legend>
+      </div>
     </div>
   </footer>
 

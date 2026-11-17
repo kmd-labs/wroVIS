@@ -154,10 +154,10 @@ Zasady:
 
 | Etap | Zakres | Gotowe, gdy | Szacunek |
 | :--- | :--- | :--- | ---: |
-| **0. Szkielet** | scaffold CLI, scalenie do tego repo, submoduł, `npm start`, `maplibre-gl` + `pmtiles`, pusta mapa Wrocławia na OpenFreeMap | aplikacja działa lokalnie z HUD i mapą; commit | 0,5 dnia |
+| **0. Szkielet** ✅ | scaffold CLI, scalenie do tego repo, submoduł, `npm start`, `maplibre-gl` + `pmtiles`, pusta mapa Wrocławia na OpenFreeMap | aplikacja działa lokalnie z HUD i mapą; commit | 0,5 dnia |
 | **1. Dane** ✅ | pipeline Node `00–40`, audyt tagów, `wroclaw.pmtiles` + GeoJSON + `stats.json`, `manifest.json` | pliki w `src/assets/data/` (17,2 MB); audyt w `manifest.json` | wykonane 2026-11-16 |
-| **2. Rdzeń mapy** | `MapService`, `style.builder` z tokenów, rejestr warstw, przełącznik widoków, splash z progresem, inspektor hover/klik | styl reaguje na `ThemeService.mode()`; przełączanie widoków bez migotania | 1–2 dni |
-| **3. Widoki MVP** | Zabudowa 3D → Mosty i woda → Transport → Osiedla (każdy: warstwy, dok, legenda, i18n PL/EN, słowniczek) | każdy widok ma suwak, legendę, popup, oba języki | 4–6 dni |
+| **2. Rdzeń mapy** ✅ | `MapService`, `style.builder` z tokenów, rejestr warstw, przełącznik widoków, splash z progresem, inspektor hover/klik | styl reaguje na `ThemeService.mode()`; przełączanie widoków bez migotania | 1–2 dni |
+| **3. Widoki MVP** (w toku: warstwy 4 widoków w `layers.registry`) | Zabudowa 3D → Mosty i woda → Transport → Osiedla (każdy: warstwy, dok, legenda, i18n PL/EN, słowniczek) | każdy widok ma suwak, legendę, popup, oba języki | 4–6 dni |
 | **4. Wykończenie** | mobile (`respond-to`, dok ikonowy), a11y (ARIA, klawiatura), wydajność (z-levels, simplify, Lighthouse), checklista `design.md` §8 | Lighthouse ≥ 90 perf/a11y na desktopie; checklista odhaczona | 1–2 dni |
 | **5. Wdrożenie** | `deploy.yml`, README z atrybucją ODbL/Geofabrik/OpenFreeMap, OG image, tag `v1.0.0` | strona na GitHub Pages działa z czystej przeglądarki | 0,5 dnia |
 | Rozszerzenia | widoki 5–9 z §3 | każdy jako osobny PR | wg potrzeb |

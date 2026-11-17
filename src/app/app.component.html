@@ -48,7 +48,14 @@
 
   <!-- Bottom Dock: view context, parameter slider with presets, legend and glossary -->
   <footer class="dock-wrap">
-    <div class="dock glass-panel" #dock>
+    <div
+      class="dock glass-panel"
+      #dock
+      [class.dock--neon]="neonDock()"
+      [style.--neon-accent]="neonDock() ? cyberVar('outline') : null"
+      [style.--neon-hl]="neonDock() ? cyberVar('select') : null"
+      [style.--neon-bg]="neonDock() ? cyberVar('bg') : null"
+      [style.--neon-ink]="neonDock() ? cyberVar('hover') : null">
       <div class="dock__main">
         <div class="dock__head">
           <lucide-icon class="dock__icon" [img]="currentViewIcon()" [size]="16"></lucide-icon>

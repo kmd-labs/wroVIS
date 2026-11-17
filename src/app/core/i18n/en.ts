@@ -17,7 +17,7 @@ export const EN: Dict = {
   viewBridges: 'Bridges & water',
   viewTransit: 'Transport',
   viewDistricts: 'Districts',
-  viewCyberpunk: 'CyberPunk',
+  viewCyberpunk: 'Neon View',
   viewBuildingsDesc: 'Buildings by height and use; click any place to see what is within a walk',
   viewBridgesDesc: 'The Odra, canals and the bridge network by type',
   viewTransitDesc: 'Tram tracks, stops, cycleways and walking range',

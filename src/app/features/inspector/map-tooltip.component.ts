@@ -4,6 +4,7 @@ import { I18nService } from '../../core/i18n/i18n.service';
 import { MapService } from '../../core/map/map.service';
 import { AppState } from '../../core/state/app.state';
 import { describeFeature } from './feature-format';
+import { CARD_VIEWS } from './cyber-scan-card.component';
 
 /** Pointer-following glass pill naming the hovered map feature (title + one-line summary). */
 @Component({
@@ -30,6 +31,8 @@ export class MapTooltipComponent {
 
   readonly description = computed(() => {
     const pick = this.state.hovered();
+    // An open feature card already describes the feature; a pill under it is noise.
+    if (CARD_VIEWS.includes(this.state.currentView()) && this.state.selected()) return null;
     return pick ? describeFeature(pick, this.i18n.t(), this.i18n.lang(), this.data.stats()) : null;
   });
 

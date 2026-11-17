@@ -6,6 +6,8 @@
   <!-- Fullscreen Visualization Stage: MapLibre canvas -->
   <app-map-stage class="stage" role="region" [attr.aria-label]="t.stageAriaLabel"></app-map-stage>
   <app-map-tooltip></app-map-tooltip>
+  <app-cyber-scan-card></app-cyber-scan-card>
+  <app-district-ranking></app-district-ranking>
 
   <!-- Top HUD: Left Logotype + Language, Right View Switcher -->
   <header class="header" #header [class.header--popup-open]="isPopupOpen()">
@@ -54,8 +56,142 @@
             <span class="dock__title">{{ viewTitle() }}</span>
             <span class="dock__desc">{{ viewDesc() }}</span>
           </div>
+          @if (isBuildings()) {
+            <app-toggle
+              class="dock__switcher"
+              size="sm"
+              [label]="t.walkToggle"
+              [ariaLabel]="t.walkToggle"
+              [tooltipText]="t.walkToggleHint"
+              [checked]="state.walkEnabled()"
+              (checkedChange)="state.setWalkEnabled($event)">
+            </app-toggle>
+          }
+          @if (!showSlider()) {
+            <!-- Without the slider its glossary button would be gone, so it sits in the head instead. -->
+            <app-button variant="ghost" [iconOnly]="true" [ariaLabel]="t.glossary" [titleText]="t.glossary" (btnClick)="openGlossary()">
+              <lucide-icon [img]="bookOpenIcon" [size]="15"></lucide-icon>
+            </app-button>
+          }
+          @if (state.currentView() === 'transit') {
+            <app-switcher
+              class="dock__switcher"
+              size="sm"
+              [options]="transitModeOptions()"
+              [value]="state.transitMode()"
+              [ariaLabel]="t.transitModeLabel"
+              (valueChange)="onTransitMode($event)">
+            </app-switcher>
+          }
+          @if (state.currentView() === 'cyberpunk') {
+            <app-switcher
+              class="dock__switcher"
+              size="sm"
+              [options]="paletteOptions()"
+              [value]="state.params().cyberPalette"
+              [ariaLabel]="t.palette"
+              (valueChange)="onPaletteChange($event)">
+            </app-switcher>
+          }
+          @if (state.currentView() === 'districts') {
+            @if (bp.mobile()) {
+              <app-button
+                variant="ghost"
+                [iconOnly]="true"
+                [ariaLabel]="t.rankingTitle"
+                [titleText]="t.rankingButton"
+                (btnClick)="state.rankingSheetOpen.set(true)">
+                <lucide-icon [img]="rankingIcon" [size]="16"></lucide-icon>
+              </app-button>
+            }
+            <div class="dock__switcher">
+              <app-dropdown
+                variant="ghost"
+                align="right"
+                direction="up"
+                [options]="metricOptions()"
+                [value]="state.params().districtsMetric"
+                [ariaLabel]="t.chooseMetric"
+                (valueChange)="onMetricChange($event)">
+              </app-dropdown>
+            </div>
+          }
         </div>
 
+        @if (isWalk()) {
+          <div class="dock__walk" aria-live="polite">
+            @switch (walk.status()) {
+              @case ('loading') {
+                <p class="dock__walk-note">{{ t.walkLoading }}</p>
+              }
+              @case ('error') {
+                <p class="dock__walk-note">{{ t.walkError }}</p>
+              }
+              @default {
+                @if (walk.outside()) {
+                  <p class="dock__walk-note">{{ t.walkOutside }}</p>
+                } @else if (walkStats(); as stats) {
+                  <ul class="dock__walk-grid">
+                    @for (s of stats; track s.cat) {
+                      <li class="dock__walk-item" [class.dock__walk-item--empty]="s.empty">
+                        <span class="dock__walk-count">{{ s.count }}</span>
+                        <span class="dock__walk-label">{{ s.label }}</span>
+                        <span class="dock__walk-near">{{ s.nearest }}</span>
+                      </li>
+                    }
+                  </ul>
+                } @else {
+                  <p class="dock__walk-note">{{ t.walkHint }}</p>
+                }
+              }
+            }
+          </div>
+        }
+
+        @if (isBikeMode()) {
+          <div class="dock__bike" aria-live="polite">
+            @switch (bike.status()) {
+              @case ('loading') {
+                <p class="dock__walk-note">{{ t.bikeLoading }}</p>
+              }
+              @case ('error') {
+                <p class="dock__walk-note">{{ t.bikeError }}</p>
+              }
+              @default {
+                @if (state.bikePoints().length === 0) {
+                  <p class="dock__walk-note">{{ t.bikeHint }}</p>
+                } @else {
+                  <div class="dock__bike-row">
+                    <div class="dock__bike-total">
+                      <span class="dock__bike-km">{{ bikeTotal() }}</span>
+                      <span class="dock__walk-near">{{ t.bikeTotal }}</span>
+                    </div>
+                    <ul class="dock__bike-legs">
+                      @for (leg of bikeLegs(); track $index) {
+                        <li [class.dock__bike-leg--broken]="leg.broken">
+                          <span class="dock__bike-leg-name">{{ leg.label }}</span>
+                          <span class="dock__bike-leg-km">{{ leg.value }}</span>
+                        </li>
+                      } @empty {
+                        <li class="dock__walk-near">{{ t.bikeAddMore }}</li>
+                      }
+                    </ul>
+                    <div class="dock__bike-actions">
+                      <app-button variant="ghost" [iconOnly]="true" [ariaLabel]="t.bikeUndo" [titleText]="t.bikeUndo" (btnClick)="bike.undo()">
+                        <lucide-icon [img]="undoIcon" [size]="15"></lucide-icon>
+                      </app-button>
+                      <app-button variant="ghost" [iconOnly]="true" [ariaLabel]="t.bikeClear" [titleText]="t.bikeClear" (btnClick)="bike.clear()">
+                        <lucide-icon [img]="clearIcon" [size]="15"></lucide-icon>
+                      </app-button>
+                    </div>
+                  </div>
+                }
+              }
+            }
+          </div>
+        }
+
+        @if (showSlider()) {
         <div class="dock__slider">
           <div class="dock__slider-head">
             <span class="dock__slider-label">{{ sliderLabel() }}</span>
@@ -82,9 +218,10 @@
             </app-button>
           </app-timeline-slider>
         </div>
+        }
       </div>
 
-      <div class="dock__legend">
+      <div class="dock__legend" [class.dock__legend--wide]="legendWide()">
         <span class="dock__legend-title">{{ t.legend }}</span>
         <app-legend [spec]="legend()"></app-legend>
       </div>

@@ -56,12 +56,12 @@ Każdy widok to pionowy wycinek: warstwy mapy + panel doku + legenda + klucze i1
 1. **Zabudowa 3D** (`view: buildings`)
    - Wytłaczanie budynków (`fill-extrusion`), wysokość = `height` lub `levels × 3`.
    - Kolor wg klasy budynku (mieszkalny / usługowy / przemysłowy / sakralny / publiczny / inny) lub wg liczby kondygnacji (przełącznik `app-switcher` w doku).
-   - Suwak: **min. liczba kondygnacji** (0–30) z markerami presetów (3, 5, 11, 20). Play: automatyczny przelot po progach.
-   - Hover: nazwa, kondygnacje, typ. Klik: popup ze szczegółami + link do obiektu na osm.org.
+   - Suwak: **czas dojścia pieszo** (5–20 min, presety 5/10/15/20). Klik w budynek lub mapę uruchamia zasięg pieszy (5 km/h) i kartę budynku obok niego.
+   - Hover: nazwa, kondygnacje, typ. Klik: karta budynku przypięta obok (adres, co jest w środku, zabytek) + link do obiektu na osm.org.
 
 2. **Mosty i woda** (`view: bridges`)
    - Odra, kanały i wyspy jako wyróżniona warstwa wody; mosty (`man_made=bridge` + drogi z `bridge=*`) kolorowane wg typu: drogowy / tramwajowy / kolejowy / kładka piesza i rowerowa.
-   - Suwak: **min. długość mostu (m)**. Toggle per typ mostu. Licznik mostów w doku.
+   - Suwak: **mosty do X m** (rośnie liczba mostów). Toggle per typ mostu. Licznik mostów w doku.
    - Popup: nazwa, typ, długość (policzona w pipeline w EPSG:2180).
 
 3. **Transport** (`view: transit`)
@@ -75,6 +75,12 @@ Każdy widok to pionowy wycinek: warstwy mapy + panel doku + legenda + klucze i1
    - Klik: popup z kartą osiedla i mini-wykresem (porównanie do mediany miasta).
 
 ### Rozszerzenia (po MVP, w kolejności)
+
+**Zrobione poza planem:** **zasięg pieszy („miasto 15 minut”) w widoku Zabudowa 3D**: klik w budynek lub mapę → Dijkstra po grafie pieszym (5 km/h) w przeglądarce, ulice w zasięgu w pasmach 5/10/15/20 min, „fala” przez ~1 s po kliknięciu, liczniki miejsc w zasięgu i czas do najbliższego w doku, dane budynku w karcie przypiętej obok (bez modalnego popupu). Suwak doku to czas dojścia (5–20 min); suwak min. kondygnacji usunięty. Graf pobiera się przy pierwszym kliknięciu; liczy się tylko na klik i zmianę suwaka, nic nie działa w tle. Zasięg włącza przełącznik „Zasięg pieszy” w doku (domyślnie wyłączony, pamiętany); przy aktywnym zasięgu budynki poza nim są szare (`feature-state.wt`, liczone dla wczytanych kafli i po każdym przesunięciu mapy).
+
+**Legenda jako pastylki:** każda pozycja legendy kategorii (Zabudowa 3D, Mosty, Transport, CyberPunk) wyłącza swoją kategorię (filtr) lub warstwę (`legendLayers`); stan tylko w sesji. Skala Osiedli bez zmian.
+
+**Mosty i woda:** suwak pokazuje mosty **do** X m (w prawo przybywa dłuższych, na końcu skali wszystkie); obok liczba mostów i odcinków, zgodna z mapą i pastylkami. Mosty grupuje pipeline (`lib/bridge-groups.mjs`: ta sama nazwa albo końce bez nazwy ≤ 30 m) i zapisuje w każdym odcinku `bid` i `blen` (długość mostu = najdłuższy odcinek), więc filtr działa na całe mosty: 637 mostów, do 50 m 481, do 100 m 566, do 200 m 608, do 300 m 622. **Transport → Trasa rowerowa:** przełącznik w doku zamienia suwak na planer: klik dodaje punkty A, B, C…, punkty można przeciągać, Cofnij/Wyczyść; trasa wyłącznie po drogach rowerowych połączonych w OSM (`cycle.bin.gz`, 494 km, 70 kB; 74 % w jednej spójnej sieci), km łącznie i per odcinek; brak połączenia = przerywana linia i komunikat.
 
 5. **Zieleń** — parki, lasy, ogródki działkowe, cmentarze; udział zieleni per osiedle.
 6. **Usługi (POI)** — heatmapa wg kategorii (gastronomia, edukacja, zdrowie, kultura, handel).
@@ -105,11 +111,13 @@ Wyjścia w `src/assets/data/` (commitowane, łącznie 17,2 MB):
 
 | Plik | Rozmiar | Zawartość |
 | :--- | ---: | :--- |
-| `wroclaw.pmtiles` | 16,1 MB | z10–z14 (overzoom w MapLibre powyżej 14), 246 kafli; warstwy: `buildings` (z13+), `bridge_areas`, `water`, `waterways`, `green`, `tram_tracks`, `cycleways`, `bridges`, `poi` |
+| `wroclaw.pmtiles` | 19,1 MB | z10–z14 (overzoom w MapLibre powyżej 14), 248 kafli; warstwy: `buildings` (z13+), `bridge_areas`, `water`, `waterways`, `green`, `tram_tracks`, `cycleways`, `bridges`, `streets` (z12+), `poi` |
 | `districts.geojson` | 163 kB | 48 osiedli z wpisanymi metrykami |
 | `tram_routes.geojson`, `tram_stops.geojson` | 388 / 84 kB | 49 wariantów tras (25 linii, `ref`, `colour`), 465 przystanków |
 | `bridges.geojson` | 341 kB | 1 332 odcinki na mostach (`kind`: road/tram/rail/foot/other, długość) |
 | `city.geojson`, `stats.json`, `manifest.json` | < 60 kB | granica, statystyki miasta i osiedli, metadane (data ekstraktu, MD5, audyt) |
+| `cycle.bin.gz` | 70 kB | graf dróg rowerowych dla planera trasy w widoku Transport (ten sam format co `walk.bin.gz`) |
+| `walk.bin.gz` | 1,5 MB | graf pieszy dla zasięgu „miasto 15 minut” w Zabudowie 3D (202 tys. węzłów, 7 754 km chodników, ścieżek i ulic, 13 tys. miejsc w 8 kategoriach); binarny, gzip, ładowany przy pierwszym kliknięciu. Format w `tools/pipeline/src/lib/walk-graph.mjs` |
 
 Identyfikatory cech: `id = osmId×2` (way) lub `osmId×2+1` (relation), więc działają z `feature-state`; właściwość `osm` trzyma oryginalny odnośnik. Wysokość budynku: `height` → `building:levels × 3 m` → szacunek wg klasy, z oznaczeniem źródła w `hsrc`.
 
@@ -146,6 +154,7 @@ Zasady:
 - `app-timeline-slider` ze szkieletu służy jako suwak parametru; `min/max/step/markers` konfigurowane per widok.
 - Hover przez `feature-state`, nie przez przebudowę warstw; filtrowanie suwakiem przez `setFilter` / wyrażenia.
 - Atrybucja `© OpenStreetMap contributors` (ODbL) zawsze widoczna: kompaktowa kontrolka MapLibre + wpis w słowniczku.
+- **Odstępstwo od trzystrefowego HUD (`AGENTS.md` §2), świadome:** widok Osiedla ma lewy panel „Ranking osiedli” między nagłówkiem a dokiem (`features/districts/district-ranking.component.ts`). To panel danych, nie ustawień: akordeon 16 atrybutów zsynchronizowany z miarą kartogramu, ranking 48 osiedli, najechanie wyróżnia osiedle na mapie. Kamera dostaje lewy padding równy szerokości panelu. Na telefonie panel jest arkuszem otwieranym przyciskiem w doku.
 - SEO/OG przez `SeoService`, własny `og-image` przez `scripts/generate-og.mjs`.
 
 ---

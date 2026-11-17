@@ -16,6 +16,8 @@ export interface FeatureDescription {
   subtitle: string;
   rows: DetailRow[];
   osmUrl: string | null;
+  /** Wikipedia article of the object, when tagged in OSM. */
+  wikiUrl?: string | null;
 }
 
 const BUILDING_CLASS_LABEL: Record<string, keyof Dict> = {
@@ -36,6 +38,18 @@ const BRIDGE_KIND_LABEL: Record<string, keyof Dict> = {
   other: 'brOther'
 };
 
+/** Place categories of the walking-reach view (`cat` property of reached places). */
+const PLACE_LABEL: Record<string, keyof Dict> = {
+  shop: 'placeShop',
+  food: 'placeFood',
+  education: 'placeEducation',
+  health: 'placeHealth',
+  culture: 'placeCulture',
+  services: 'placeServices',
+  tram: 'placeTram',
+  park: 'placePark'
+};
+
 /** District rows shown in the details popup: property, label key, unit and whether a city median exists. */
 const DISTRICT_ROWS: { key: DistrictNumericKey; label: keyof Dict; unit?: string; digits?: number }[] = [
   { key: 'area_km2', label: 'propArea', unit: 'km²', digits: 1 },
@@ -46,7 +60,12 @@ const DISTRICT_ROWS: { key: DistrictNumericKey; label: keyof Dict; unit?: string
   { key: 'water_pct', label: 'propWaterPct', unit: '%', digits: 1 },
   { key: 'tram_stops', label: 'propTramStops' },
   { key: 'bridges', label: 'propBridges' },
-  { key: 'levels_mean', label: 'propLevelsMean', digits: 1 }
+  { key: 'levels_mean', label: 'propLevelsMean', digits: 1 },
+  { key: 'streets_km', label: 'propStreetsKm', unit: 'km', digits: 1 },
+  { key: 'streets_km_per_km2', label: 'propStreetsPerKm2', unit: 'km/km²', digits: 1 },
+  { key: 'tram_street_pct', label: 'propTramStreetPct', unit: '%', digits: 1 },
+  { key: 'pedestrian_km', label: 'propPedestrianKm', unit: 'km', digits: 1 },
+  { key: 'slow_street_pct', label: 'propSlowStreetPct', unit: '%', digits: 1 }
 ];
 
 /** Turns a picked map feature into localized, human-readable text for the tooltip and the details popup. */
@@ -60,7 +79,7 @@ export function describeFeature(pick: PickedFeature, t: Dict, lang: Lang, stats:
   const rows: DetailRow[] = [];
   const id = pick.layerId;
 
-  if (id.startsWith('bld-')) {
+  if (id.startsWith('bld-') || id === 'cy-bld') {
     const cls = str(p['class']) || 'other';
     const classLabel = t[BUILDING_CLASS_LABEL[cls] ?? 'classOther'];
     const levels = typeof p['levels'] === 'number' ? p['levels'] : null;
@@ -73,8 +92,29 @@ export function describeFeature(pick: PickedFeature, t: Dict, lang: Lang, stats:
       rows.push({ label: t.propHeight, value: num(p['height'], 1, 'm'), note });
     }
     if (typeof p['year'] === 'number') rows.push({ label: t.propYear, value: String(p['year']) });
+
+    // Address: tags of the outline, or up to three address points inside it (joined by the pipeline with "; ").
+    const addresses = str(p['addr']).split('; ').filter(Boolean);
+    if (addresses.length) {
+      const more = typeof p['addr_more'] === 'number' ? p['addr_more'] : 0;
+      rows.unshift({ label: t.propAddress, value: addresses.join(', '), note: more ? `${t.andMore} ${more}` : undefined });
+    }
+    // Shops and services whose point lies inside the outline.
+    const poiCount = typeof p['poi_n'] === 'number' ? p['poi_n'] : 0;
+    if (poiCount) {
+      const names = str(p['poi']).split('; ').filter(Boolean);
+      const countLabel = `${nf().format(poiCount)} ${t.unitPlaces}`;
+      rows.push({ label: t.propInside, value: names.length ? names.join(', ') : countLabel, note: names.length ? countLabel : undefined });
+    }
+    if (str(p['architect'])) rows.push({ label: t.propArchitect, value: str(p['architect']) });
+    if (str(p['style'])) rows.push({ label: t.propStyle, value: str(p['style']), mono: true });
+    if (p['heritage']) {
+      const ref = str(p['heritage_ref']);
+      rows.push({ label: t.propHeritage, value: t.heritageListed, note: ref ? `${t.heritageRef} ${ref}` : undefined });
+    }
+
     const subtitle = levels !== null ? `${classLabel} · ${nf().format(levels)} ${t.unitStoreysShort}` : classLabel;
-    return { title: name || t.inspBuilding, subtitle, rows, osmUrl };
+    return { title: name || addresses[0] || t.inspBuilding, subtitle, rows, osmUrl, wikiUrl: str(p['wiki']) || null };
   }
 
   if (id.startsWith('br-')) {
@@ -87,12 +127,19 @@ export function describeFeature(pick: PickedFeature, t: Dict, lang: Lang, stats:
     return { title: name || t.inspBridge, subtitle, rows, osmUrl };
   }
 
-  if (id === 'tr-stops' || id === 'tr-tracks') {
+  if (id === 'tr-stops' || id === 'tr-tracks' || id === 'cy-stops' || id === 'cy-tram') {
     const routes = str(p['routes']).split(';').filter(Boolean);
     if (routes.length) rows.push({ label: t.propRoutes, value: routes.join(', ') });
-    const label = id === 'tr-stops' ? t.inspTramStop : t.inspTramTrack;
+    const label = id.endsWith('stops') ? t.inspTramStop : t.inspTramTrack;
     const subtitle = routes.length ? `${label} · ${routes.join(', ')}` : label;
     return { title: name || label, subtitle, rows, osmUrl };
+  }
+
+  if (id === 'wk-places') {
+    const cat = str(p['cat']);
+    const label = t[PLACE_LABEL[cat] ?? 'placeShop'];
+    const minutes = typeof p['t'] === 'number' ? Math.max(1, Math.round(p['t'])) : null;
+    return { title: label, subtitle: minutes === null ? '' : `${minutes} ${t.minutesOnFoot}`, rows, osmUrl: null };
   }
 
   if (id.startsWith('di-')) {
@@ -100,11 +147,10 @@ export function describeFeature(pick: PickedFeature, t: Dict, lang: Lang, stats:
       const v = p[row.key];
       if (typeof v !== 'number') continue;
       const median = stats?.medians[row.key];
-      rows.push({
-        label: t[row.label],
-        value: num(v, row.digits ?? 0, row.unit ?? ''),
-        note: typeof median === 'number' ? `${t.cityMedian}: ${num(median, row.digits ?? 0, row.unit ?? '')}` : undefined
-      });
+      const notes = typeof median === 'number' ? [`${t.cityMedian}: ${num(median, row.digits ?? 0, row.unit ?? '')}`] : [];
+      // The 30 km/h share only covers streets with a tagged limit, so its coverage is shown next to it.
+      if (row.key === 'slow_street_pct' && typeof p['maxspeed_known_pct'] === 'number') notes.push(`${t.maxspeedCoverage}: ${num(p['maxspeed_known_pct'], 0, '%')}`);
+      rows.push({ label: t[row.label], value: num(v, row.digits ?? 0, row.unit ?? ''), note: notes.length ? notes.join(' · ') : undefined });
     }
     if (typeof p['max_height_m'] === 'number') {
       const tallest = str(p['tallest_name']);

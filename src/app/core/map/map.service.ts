@@ -2,6 +2,7 @@ import { Injectable, NgZone, effect, inject, signal, untracked } from '@angular/
 import {
   AttributionControl,
   FeatureIdentifier,
+  LngLatBounds,
   Map as MapLibreMap,
   MapMouseEvent,
   PointLike,
@@ -13,11 +14,13 @@ import { ThemeService } from '@kmd/design-system';
 import { I18nService } from '../i18n/i18n.service';
 import { DataService } from '../data/data.service';
 import { AppState } from '../state/app.state';
-import { MAP_MAX_ZOOM, MAP_MIN_ZOOM, WROCLAW_MAX_BOUNDS } from './map.config';
+import type { MultiPolygon, Polygon } from 'geojson';
+import { MAP_MAX_ZOOM, MAP_MIN_ZOOM, SRC_DISTRICTS, WROCLAW_MAX_BOUNDS } from './map.config';
 import { PickedFeature, StyleContext, ViewId } from './map.types';
 import { VIEWS } from './layers.registry';
 import { buildMapStyle } from './style.builder';
 import { StyleTools } from './style.expr';
+import { StopPulse } from './stop-pulse';
 
 export type MapStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -52,6 +55,9 @@ export class MapService {
   private hovered: PickedFeature | null = null;
   private selectedRef: FeatureIdentifier | null = null;
   private appliedView: ViewId | null = null;
+  private pulse: StopPulse | null = null;
+  private hud = { top: 0, bottom: 0 };
+  private leftInset = 0;
 
   /** Lifecycle of the map: idle → loading → ready (first frame rendered) | error. */
   readonly status = signal<MapStatus>('idle');
@@ -79,6 +85,31 @@ export class MapService {
       if (!this.map || !this.styleLoaded() || this.appliedView === view) return;
       this.appliedView = view;
       untracked(() => this.flyToView(view));
+    });
+
+    // Tram stops pulse while the neon view is active (and the user has not asked for reduced motion).
+    // Only after "ready": a running animation keeps repainting, so MapLibre would never fire the first `idle`.
+    effect(() => {
+      const active = this.state.currentView() === 'cyberpunk' && this.status() === 'ready';
+      untracked(() => {
+        if (!this.pulse) return;
+        if (active && !prefersReducedMotion()) this.zone.runOutsideAngular(() => this.pulse?.start());
+        else this.pulse.stop();
+      });
+    });
+
+    // District hovered in the ranking panel mirrors into `feature-state.listHover`.
+    let listHovered: number | null = null;
+    effect(() => {
+      const id = this.state.highlightedDistrict();
+      const ready = this.styleLoaded();
+      untracked(() => {
+        const map = this.map;
+        if (!map || !ready || id === listHovered) return;
+        if (listHovered !== null) map.removeFeatureState({ source: SRC_DISTRICTS, id: listHovered }, 'listHover');
+        if (id !== null) map.setFeatureState({ source: SRC_DISTRICTS, id }, { listHover: true });
+        listHovered = id;
+      });
     });
 
     // Selected feature mirrors into `feature-state` so the style can highlight it.
@@ -121,6 +152,7 @@ export class MapService {
     // ODbL requires a visible OpenStreetMap credit: compact control, styled in styles.scss.
     map.addControl(new AttributionControl({ compact: true }), 'bottom-right');
 
+    this.pulse = new StopPulse(map);
     map.once('style.load', () => this.zone.run(() => this.styleLoaded.set(true)));
     map.once('load', () => {
       this.bindInteractions(map);
@@ -141,10 +173,24 @@ export class MapService {
 
   /** Keeps the camera centre clear of the HUD (header on top, dock at the bottom). */
   setHudPadding(top: number, bottom: number) {
-    this.map?.setPadding({ top, bottom, left: 24, right: 24 });
+    this.hud = { top, bottom };
+    this.applyPadding();
+  }
+
+  /** Width of a left HUD panel (district ranking) the camera should keep clear of; 0 when none. */
+  setLeftInset(px: number) {
+    if (px === this.leftInset) return;
+    this.leftInset = px;
+    this.applyPadding();
+  }
+
+  private applyPadding() {
+    this.map?.setPadding({ top: this.hud.top, bottom: this.hud.bottom, left: Math.max(24, this.leftInset + 12), right: 24 });
   }
 
   destroy() {
+    this.pulse?.stop();
+    this.pulse = null;
     this.map?.remove();
     this.map = null;
     this.hovered = null;
@@ -161,7 +207,11 @@ export class MapService {
       lang: this.i18n.lang(),
       view: this.state.currentView(),
       params: this.state.params(),
-      stats: this.data.stats()
+      stats: this.data.stats(),
+      hidden: this.state.hiddenLegend(),
+      walkEnabled: this.state.walkEnabled(),
+      walkActive: this.state.walkActive(),
+      transitMode: this.state.transitMode()
     };
     const data = { districts: this.data.districts(), districtLabels: this.data.districtLabels() };
     return buildMapStyle(ctx, data, this.tokenTools());
@@ -188,8 +238,23 @@ export class MapService {
   private flyToView(view: ViewId) {
     const map = this.map;
     if (!map) return;
-    const reduceMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    this.zone.runOutsideAngular(() => map.easeTo({ ...VIEWS[view].camera, duration: reduceMotion ? 0 : 1100, essential: true }));
+    this.zone.runOutsideAngular(() => map.easeTo({ ...VIEWS[view].camera, duration: prefersReducedMotion() ? 0 : 1100, essential: true }));
+  }
+
+  /** Frames a district; the map padding (HUD and ranking panel) is added by MapLibre on top of `padding`. */
+  focusDistrict(id: number) {
+    const map = this.map;
+    const feature = this.data.districts()?.features.find(f => f.properties?.['id'] === id);
+    if (!map || !feature) return;
+    const bounds = new LngLatBounds();
+    const visit = (c: unknown): void => {
+      if (Array.isArray(c) && typeof c[0] === 'number') bounds.extend(c as [number, number]);
+      else if (Array.isArray(c)) c.forEach(visit);
+    };
+    visit((feature.geometry as Polygon | MultiPolygon).coordinates);
+    this.zone.runOutsideAngular(() =>
+      map.fitBounds(bounds, { padding: 40, maxZoom: 14, duration: prefersReducedMotion() ? 0 : 900 })
+    );
   }
 
   // ─── Hover & click ────────────────────────────────────────────────────────
@@ -217,7 +282,8 @@ export class MapService {
       id: feature.id,
       properties: feature.properties ?? {},
       x: point.x,
-      y: point.y
+      y: point.y,
+      lngLat: map.unproject(point).toArray() as [number, number]
     };
   }
 
@@ -243,7 +309,26 @@ export class MapService {
   private onClick(e: MapMouseEvent) {
     const map = this.map;
     if (!map) return;
+    // Bike route planner: a click adds a waypoint (unless it lands on one, which starts a drag instead).
+    if (this.state.currentView() === 'transit' && this.state.transitMode() === 'bike') {
+      const onPoint = map.getLayer('bk-points') && map.queryRenderedFeatures(e.point, { layers: ['bk-points'] }).length > 0;
+      if (!onPoint) {
+        const point: [number, number] = [e.lngLat.lng, e.lngLat.lat];
+        this.zone.run(() => this.state.bikePoints.update(p => [...p, point]));
+      }
+      return;
+    }
     const pick = this.pick(map, e.point);
+    // In the 3D buildings view a click (re)starts the walking reach from that point when the reach is on;
+    // a clicked building is selected as well, so its card shows next to it.
+    if (this.state.currentView() === 'buildings') {
+      const origin: [number, number] = [e.lngLat.lng, e.lngLat.lat];
+      this.zone.run(() => {
+        if (this.state.walkEnabled()) this.state.walkOrigin.set(origin);
+        this.state.selected.set(pick && pick.layerId === 'bld-extrusion' ? pick : null);
+      });
+      return;
+    }
     this.zone.run(() => this.state.selected.set(pick));
   }
 
@@ -254,6 +339,10 @@ export class MapService {
     this.selectedRef = selected ? featureRef(selected) : null;
     if (this.selectedRef) map.setFeatureState(this.selectedRef, { selected: true });
   }
+}
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
 function featureRef(pick: PickedFeature): FeatureIdentifier {

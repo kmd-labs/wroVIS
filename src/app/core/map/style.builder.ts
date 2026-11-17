@@ -9,16 +9,23 @@ import {
   MAP_FONT_ITALIC,
   MAP_FONT_REGULAR,
   SRC_BASEMAP,
+  SRC_BIKE_POINTS,
+  SRC_BIKE_ROUTE,
   SRC_CITY,
   SRC_DISTRICTS,
   SRC_DISTRICT_LABELS,
   SRC_TRAM_STOPS,
+  SRC_WALK_ORIGIN,
+  SRC_WALK_PLACES,
+  SRC_WALK_STREETS,
   SRC_WROVIS,
   assetUrl
 } from './map.config';
 import { StyleContext } from './map.types';
-import { Expr, StyleTools, byZoom, geometryIs, nameField } from './style.expr';
+import { Expr, StyleTools, byZoom, geometryIs, nameField, withVisibility } from './style.expr';
 import { thematicLayers } from './layers.registry';
+import { liveSourceData } from './live-sources';
+import { CyberRole, cyberToken } from '../../shared/cyber-palette';
 
 const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
@@ -57,43 +64,120 @@ export function buildMapStyle(ctx: StyleContext, data: StyleData, tools: StyleTo
       [SRC_CITY]: { type: 'geojson', data: assetUrl(DATA_PATHS.city) },
       [SRC_TRAM_STOPS]: { type: 'geojson', data: assetUrl(DATA_PATHS.tramStops), generateId: true },
       [SRC_DISTRICTS]: { type: 'geojson', data: data.districts ?? EMPTY_FC, promoteId: 'id' },
-      [SRC_DISTRICT_LABELS]: { type: 'geojson', data: data.districtLabels ?? EMPTY_FC }
+      [SRC_DISTRICT_LABELS]: { type: 'geojson', data: data.districtLabels ?? EMPTY_FC },
+      // Filled by WalkService after each click; the style carries the last written data so a rebuild keeps it.
+      [SRC_WALK_STREETS]: { type: 'geojson', data: liveSourceData.get(SRC_WALK_STREETS) ?? EMPTY_FC },
+      [SRC_WALK_PLACES]: { type: 'geojson', data: liveSourceData.get(SRC_WALK_PLACES) ?? EMPTY_FC, generateId: true },
+      [SRC_WALK_ORIGIN]: { type: 'geojson', data: liveSourceData.get(SRC_WALK_ORIGIN) ?? EMPTY_FC },
+      [SRC_BIKE_ROUTE]: { type: 'geojson', data: liveSourceData.get(SRC_BIKE_ROUTE) ?? EMPTY_FC },
+      [SRC_BIKE_POINTS]: { type: 'geojson', data: liveSourceData.get(SRC_BIKE_POINTS) ?? EMPTY_FC }
     },
+    // Directional light of fill-extrusions: a colder, brighter key light makes neon façades pop.
+    light:
+      ctx.view === 'cyberpunk'
+        ? { anchor: 'viewport', position: [1.3, 200, 35], color: tools.color(cyberToken(ctx.params.cyberPalette, 'hover')), intensity: 0.62 }
+        : { anchor: 'viewport', position: [1.15, 210, 30], intensity: 0.5 },
     layers: [...basemapGround(ctx, tools), ...thematicLayers(ctx, tools), ...basemapLabels(ctx, tools)]
+  };
+}
+
+/** Colours of the basemap ground layers for the current view. */
+interface GroundColors {
+  bg: string;
+  green: string | null;
+  water: string;
+  waterOpacity: number;
+  waterway: string;
+  waterwayOpacity: number;
+  roadMinor: string;
+  roadMajor: string;
+  roadCasing: string;
+  path: string;
+  pathOpacity: number;
+  rail: string;
+  outline: string;
+  outlineOpacity: number;
+}
+
+function groundColors(ctx: StyleContext, tools: StyleTools): GroundColors {
+  const c = tools.color;
+  if (ctx.view === 'cyberpunk') {
+    // Darkened basemap of the neon view: no land cover, dim streets, glowing city boundary.
+    const cy = (role: CyberRole) => c(cyberToken(ctx.params.cyberPalette, role));
+    return {
+      bg: cy('bg'),
+      green: null,
+      water: cy('water'),
+      waterOpacity: 1,
+      waterway: cy('waterway'),
+      waterwayOpacity: 1,
+      roadMinor: cy('road'),
+      roadMajor: cy('road-major'),
+      roadCasing: cy('bg'),
+      path: cy('road'),
+      pathOpacity: 1,
+      rail: cy('road-major'),
+      outline: cy('outline'),
+      outlineOpacity: 0.7
+    };
+  }
+  const tk = BASE_TOKENS[ctx.mode];
+  return {
+    bg: c('map-bg'),
+    green: c('success-soft'),
+    water: c('cool'),
+    waterOpacity: tools.opacity('faint'),
+    waterway: c('cool'),
+    waterwayOpacity: tools.opacity('muted'),
+    roadMinor: c(tk.road),
+    roadMajor: c(tk.road),
+    roadCasing: c(tk.roadCasing),
+    path: c(tk.path),
+    pathOpacity: tools.opacity('half'),
+    rail: c(tk.rail),
+    outline: c('text-dim'),
+    outlineOpacity: tools.opacity('medium')
   };
 }
 
 /** Background, land cover, water and the road network of the OpenMapTiles basemap. */
 function basemapGround(ctx: StyleContext, tools: StyleTools): LayerSpecification[] {
-  const tk = BASE_TOKENS[ctx.mode];
-  const c = tools.color;
+  const g = groundColors(ctx, tools);
   const roadClass = (classes: string[]): Expr => ['all', geometryIs('LineString'), ['match', ['get', 'class'], classes, true, false]];
   const majorClasses = ['motorway', 'trunk', 'primary', 'secondary', 'tertiary'];
+  // Land cover is hidden (not removed) without a green colour, so switching views only toggles visibility.
+  const green = g.green ?? g.bg;
   return [
-    { id: 'bg', type: 'background', paint: { 'background-color': c('map-bg') } },
-    {
-      id: 'base-park',
-      type: 'fill',
-      source: SRC_BASEMAP,
-      'source-layer': 'park',
-      filter: geometryIs('Polygon'),
-      paint: { 'fill-color': c('success-soft'), 'fill-antialias': false }
-    },
-    {
-      id: 'base-landcover',
-      type: 'fill',
-      source: SRC_BASEMAP,
-      'source-layer': 'landcover',
-      filter: ['all', geometryIs('Polygon'), ['match', ['get', 'class'], ['wood', 'grass'], true, false]],
-      paint: { 'fill-color': c('success-soft'), 'fill-opacity': byZoom([[9, 0.4], [13, 0.8]], 1), 'fill-antialias': false }
-    },
+    { id: 'bg', type: 'background', paint: { 'background-color': g.bg } },
+    withVisibility(
+      {
+        id: 'base-park',
+        type: 'fill',
+        source: SRC_BASEMAP,
+        'source-layer': 'park',
+        filter: geometryIs('Polygon'),
+        paint: { 'fill-color': green, 'fill-antialias': false }
+      },
+      g.green !== null
+    ),
+    withVisibility(
+      {
+        id: 'base-landcover',
+        type: 'fill',
+        source: SRC_BASEMAP,
+        'source-layer': 'landcover',
+        filter: ['all', geometryIs('Polygon'), ['match', ['get', 'class'], ['wood', 'grass'], true, false]],
+        paint: { 'fill-color': green, 'fill-opacity': byZoom([[9, 0.4], [13, 0.8]], 1), 'fill-antialias': false }
+      },
+      g.green !== null
+    ),
     {
       id: 'base-water',
       type: 'fill',
       source: SRC_BASEMAP,
       'source-layer': 'water',
       filter: ['all', geometryIs('Polygon'), ['!=', ['get', 'brunnel'], 'tunnel']],
-      paint: { 'fill-color': c('cool'), 'fill-opacity': tools.opacity('faint'), 'fill-antialias': false }
+      paint: { 'fill-color': g.water, 'fill-opacity': g.waterOpacity, 'fill-antialias': false }
     },
     {
       id: 'base-waterway',
@@ -102,7 +186,7 @@ function basemapGround(ctx: StyleContext, tools: StyleTools): LayerSpecification
       'source-layer': 'waterway',
       filter: ['all', geometryIs('LineString'), ['!=', ['get', 'brunnel'], 'tunnel']],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': c('cool'), 'line-opacity': tools.opacity('muted'), 'line-width': byZoom([[10, 0.6], [14, 1.6], [18, 5]]) }
+      paint: { 'line-color': g.waterway, 'line-opacity': g.waterwayOpacity, 'line-width': byZoom([[10, 0.6], [14, 1.6], [18, 5]]) }
     },
     {
       id: 'base-road-minor',
@@ -112,7 +196,7 @@ function basemapGround(ctx: StyleContext, tools: StyleTools): LayerSpecification
       minzoom: 12,
       filter: roadClass(['minor', 'service', 'track']),
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': c(tk.road), 'line-width': byZoom([[12, 0.5], [14, 1.4], [18, 10]]) }
+      paint: { 'line-color': g.roadMinor, 'line-width': byZoom([[12, 0.5], [14, 1.4], [18, 10]]) }
     },
     {
       id: 'base-road-major-casing',
@@ -121,7 +205,7 @@ function basemapGround(ctx: StyleContext, tools: StyleTools): LayerSpecification
       'source-layer': 'transportation',
       filter: roadClass(majorClasses),
       layout: { 'line-cap': 'butt', 'line-join': 'round' },
-      paint: { 'line-color': c(tk.roadCasing), 'line-width': byZoom([[10, 1.6], [14, 3.8], [18, 17]]) }
+      paint: { 'line-color': g.roadCasing, 'line-width': byZoom([[10, 1.6], [14, 3.8], [18, 17]]) }
     },
     {
       id: 'base-road-major',
@@ -130,7 +214,7 @@ function basemapGround(ctx: StyleContext, tools: StyleTools): LayerSpecification
       'source-layer': 'transportation',
       filter: roadClass(majorClasses),
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': c(tk.road), 'line-width': byZoom([[10, 1], [14, 2.6], [18, 15]]) }
+      paint: { 'line-color': g.roadMajor, 'line-width': byZoom([[10, 1], [14, 2.6], [18, 15]]) }
     },
     {
       id: 'base-path',
@@ -139,7 +223,7 @@ function basemapGround(ctx: StyleContext, tools: StyleTools): LayerSpecification
       'source-layer': 'transportation',
       minzoom: 14,
       filter: roadClass(['path']),
-      paint: { 'line-color': c(tk.path), 'line-opacity': tools.opacity('half'), 'line-dasharray': [2, 2], 'line-width': byZoom([[14, 0.7], [18, 2]], 1) }
+      paint: { 'line-color': g.path, 'line-opacity': g.pathOpacity, 'line-dasharray': [2, 2], 'line-width': byZoom([[14, 0.7], [18, 2]], 1) }
     },
     {
       id: 'base-rail',
@@ -148,14 +232,14 @@ function basemapGround(ctx: StyleContext, tools: StyleTools): LayerSpecification
       'source-layer': 'transportation',
       minzoom: 11,
       filter: ['all', geometryIs('LineString'), ['==', ['get', 'class'], 'rail'], ['!', ['has', 'service']]],
-      paint: { 'line-color': c(tk.rail), 'line-dasharray': [3, 2], 'line-width': byZoom([[11, 0.6], [16, 2.2]], 1) }
+      paint: { 'line-color': g.rail, 'line-dasharray': [3, 2], 'line-width': byZoom([[11, 0.6], [16, 2.2]], 1) }
     },
     {
       id: 'city-outline',
       type: 'line',
       source: SRC_CITY,
       layout: { 'line-join': 'round' },
-      paint: { 'line-color': c('text-dim'), 'line-opacity': tools.opacity('medium'), 'line-dasharray': [4, 3], 'line-width': byZoom([[10, 1.2], [14, 2]], 1) }
+      paint: { 'line-color': g.outline, 'line-opacity': g.outlineOpacity, 'line-dasharray': [4, 3], 'line-width': byZoom([[10, 1.2], [14, 2]], 1) }
     }
   ];
 }
@@ -166,7 +250,9 @@ function basemapLabels(ctx: StyleContext, tools: StyleTools): LayerSpecification
   const name = nameField(ctx.lang);
   // Districts draw their own labels, so the basemap keeps only city-level place names in that view.
   const placeClasses = ctx.view === 'districts' ? ['city', 'town', 'village'] : ['city', 'town', 'village', 'suburb', 'neighbourhood', 'quarter'];
-  return [
+  // The neon view keeps the darkened basemap free of labels so the glowing layers read clearly.
+  const visible = ctx.view !== 'cyberpunk';
+  const layers: LayerSpecification[] = [
     {
       id: 'base-label-road',
       type: 'symbol',
@@ -228,4 +314,5 @@ function basemapLabels(ctx: StyleContext, tools: StyleTools): LayerSpecification
       }
     }
   ];
+  return layers.map(layer => withVisibility(layer, visible));
 }

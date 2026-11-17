@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-16T15:55:33.364Z",
+  "generatedAt": "2026-11-17T20:19:34.992Z",
   "attribution": "© OpenStreetMap contributors, ODbL 1.0 — https://www.openstreetmap.org/copyright",
   "source": {
     "extract": "https://download.geofabrik.de/europe/poland/dolnoslaskie-latest.osm.pbf",
@@ -21,8 +21,8 @@
       "10": 4,
       "11": 8,
       "12": 18,
-      "13": 51,
-      "14": 165
+      "13": 52,
+      "14": 166
     },
     "layers": [
       {
@@ -36,8 +36,16 @@
           "levels": "Number",
           "height": "Number",
           "hsrc": "String",
+          "addr": "String",
+          "poi_n": "Number",
+          "poi": "String",
           "name": "String",
-          "year": "Number"
+          "year": "Number",
+          "heritage": "Number",
+          "heritage_ref": "String",
+          "architect": "String",
+          "wiki": "String",
+          "addr_more": "Number"
         },
         "features": 145155
       },
@@ -116,9 +124,30 @@
           "sub": "String",
           "name": "String",
           "bridge": "String",
-          "length_m": "Number"
+          "length_m": "Number",
+          "bid": "Number",
+          "blen": "Number"
         },
         "features": 1332
+      },
+      {
+        "id": "streets",
+        "minzoom": 12,
+        "maxzoom": 14,
+        "fields": {
+          "osm": "String",
+          "class": "String",
+          "kind": "String",
+          "name": "String",
+          "ref": "String",
+          "oneway": "Number",
+          "lanes": "Number",
+          "maxspeed": "Number",
+          "length_m": "Number",
+          "brunnel": "String",
+          "tram": "Number"
+        },
+        "features": 14316
       },
       {
         "id": "poi",
@@ -141,7 +170,7 @@
     },
     "buildings": {
       "features": 145155,
-      "bytes": 67696599
+      "bytes": 69593310
     },
     "water": {
       "features": 824,
@@ -157,7 +186,7 @@
     },
     "bridges": {
       "features": 1332,
-      "bytes": 375455
+      "bytes": 401819
     },
     "bridge_areas": {
       "features": 392,
@@ -178,6 +207,10 @@
     "cycleways": {
       "features": 8266,
       "bytes": 2587525
+    },
+    "streets": {
+      "features": 14316,
+      "bytes": 6335638
     },
     "poi": {
       "features": 12946,
@@ -205,22 +238,79 @@
         "estimated": 92567,
         "levels": 48183
       },
+      "withAddress": 55454,
+      "addressFromNodes": 39785,
+      "withPoi": 5613,
+      "withHeritage": 401,
+      "withArchitect": 153,
+      "withWikipedia": 196,
       "coverage": {
         "levelsPct": 34.4,
         "heightPct": 3,
         "startDatePct": 0.4,
-        "namePct": 1.1
+        "namePct": 1.1,
+        "addressPct": 38.2
       }
     },
-    "relationsDropped": 2
+    "relationsDropped": 2,
+    "streets": {
+      "total": 14316,
+      "named": 12130,
+      "tram": 2210,
+      "kmByClass": {
+        "primary": 126.4,
+        "local": 691.3,
+        "secondary": 402.8,
+        "pedestrian": 173.6,
+        "service": 61.5
+      }
+    },
+    "walk": {
+      "nodes": 202252,
+      "edges": 263429,
+      "points": 100888,
+      "places": 13018,
+      "placesByCat": {
+        "shop": 5996,
+        "food": 1847,
+        "education": 978,
+        "health": 838,
+        "culture": 1987,
+        "services": 730,
+        "tram": 465,
+        "park": 177
+      },
+      "rawBytes": 4227512,
+      "km": 7754
+    },
+    "cycle": {
+      "nodes": 9534,
+      "edges": 9825,
+      "points": 6444,
+      "places": 0,
+      "placesByCat": {
+        "shop": 0,
+        "food": 0,
+        "education": 0,
+        "health": 0,
+        "culture": 0,
+        "services": 0,
+        "tram": 0,
+        "park": 0
+      },
+      "rawBytes": 172056,
+      "km": 494
+    }
   },
   "files": {
-    "bridges.geojson": 348956,
+    "bridges.geojson": 375320,
     "city.geojson": 30121,
-    "districts.geojson": 166866,
-    "stats.json": 21313,
+    "cycle.bin.gz": 70652,
+    "districts.geojson": 173147,
+    "stats.json": 27962,
     "tram_routes.geojson": 397739,
     "tram_stops.geojson": 86331,
-    "wroclaw.pmtiles": 16124934
+    "walk.bin.gz": 1523699,
+    "wroclaw.pmtiles": 19167938
   }
 }

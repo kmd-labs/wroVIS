@@ -26,6 +26,17 @@ export interface DistrictStats {
   water_pct: number;
   tram_stops: number;
   bridges: number;
+  /** Street length inside the district (segments assigned by midpoint), km. */
+  streets_km: number;
+  streets_km_per_km2: number;
+  /** Share of street length carrying tram tracks, %. */
+  tram_street_pct: number;
+  /** Pedestrian zones and living streets, km. */
+  pedestrian_km: number;
+  /** Share of ≤ 30 km/h streets among streets with a tagged speed limit, % (null in JSON without any tagged limit). */
+  slow_street_pct: number;
+  /** Share of street length with a tagged speed limit, %. */
+  maxspeed_known_pct: number;
 }
 
 export type DistrictNumericKey = {
@@ -52,6 +63,9 @@ export interface CityStats {
     bridges_by_kind: Record<string, number>;
     green_pct: number;
     water_pct: number;
+    streets_km: number;
+    tram_street_pct: number;
+    pedestrian_km: number;
   };
   medians: Partial<Record<DistrictNumericKey, number>>;
   ranges: Partial<Record<DistrictNumericKey, MetricRange>>;

@@ -27,6 +27,7 @@ const LAYERS = [
   { id: 'tram_tracks', minzoom: 10, maxzoom: 14, tolerance: 1 },
   { id: 'cycleways', minzoom: 11, maxzoom: 14, tolerance: 1 },
   { id: 'bridges', minzoom: 11, maxzoom: 14, tolerance: 1 },
+  { id: 'streets', minzoom: 12, maxzoom: 14, tolerance: 1 },
   { id: 'poi', minzoom: 12, maxzoom: 14, tolerance: 0 }
 ];
 

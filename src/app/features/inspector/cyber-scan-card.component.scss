@@ -1,0 +1,311 @@
+@use "variables" as *;
+
+// Neon scanner card of the CyberPunk view. Colours come from the --color-cy-* tokens passed in as
+// --scan-accent (category of the picked feature), --scan-bg and --scan-ink by the component.
+
+.scan {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  pointer-events: none;
+  font-family: var(--font-family);
+}
+
+.scan__leader {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+
+  line {
+    stroke: var(--scan-accent);
+    stroke-width: 1;
+    stroke-dasharray: 4 3;
+    opacity: 0.85;
+  }
+}
+
+.scan__pin {
+  position: absolute;
+  left: -6px;
+  top: -6px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--scan-accent);
+  box-shadow: 0 0 10px var(--scan-accent);
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 2px;
+    border-radius: 50%;
+    background: var(--scan-ink);
+  }
+}
+
+.scan__card {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 300px;
+  max-width: calc(100vw - 24px);
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 12px 14px 14px;
+  pointer-events: auto;
+  color: var(--scan-ink);
+  background: color-mix(in srgb, var(--scan-bg) 90%, transparent);
+  border: 1px solid var(--scan-accent);
+  box-shadow:
+    0 0 18px color-mix(in srgb, var(--scan-accent) 35%, transparent),
+    inset 0 0 24px color-mix(in srgb, var(--scan-accent) 10%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  // Cut corner, the signature of the scanner frame.
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+  animation: scan-in 260ms ease-out;
+
+  // Sweeping scan line on open.
+  &::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 2px;
+    background: var(--scan-accent);
+    box-shadow: 0 0 12px var(--scan-accent);
+    opacity: 0;
+    animation: scan-sweep 700ms ease-out;
+    pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+
+    &::after {
+      animation: none;
+    }
+  }
+}
+
+// KMD variant (3D buildings view): glass panel in the theme, no neon glow, cut corner or scan sweep.
+.scan--kmd {
+  .scan__card {
+    background: color("panel-bg");
+    backdrop-filter: blur(blur-token("md"));
+    -webkit-backdrop-filter: blur(blur-token("md"));
+    border: 1px solid color("line");
+    border-top: 3px solid var(--scan-accent);
+    border-radius: radius("card");
+    box-shadow: 0 8px 30px color("shadow-panel");
+    clip-path: none;
+    animation: kmd-card-in 220ms ease-out;
+
+    &::after {
+      display: none;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      animation: none;
+    }
+  }
+
+  .scan__kicker {
+    font-family: var(--font-family);
+    letter-spacing: 0.08em;
+    color: color("text-dim");
+  }
+
+  .scan__title {
+    color: color("text-bright");
+    text-shadow: none;
+  }
+
+  .scan__sub,
+  .scan__row dt,
+  .scan__note {
+    color: color("text-dim");
+  }
+
+  .scan__rows {
+    border-top-color: color("line");
+  }
+
+  .scan__close {
+    border-color: color("line");
+    border-radius: radius("pill");
+    color: color("text-desc");
+
+    &:hover {
+      background: color("surface-muted");
+    }
+  }
+
+  .scan__links a {
+    color: color("link-color");
+  }
+
+  .scan__pin {
+    box-shadow: none;
+  }
+}
+
+@keyframes kmd-card-in {
+  from {
+    opacity: 0;
+    transform-origin: left center;
+    scale: 0.96;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+.scan--docked .scan__card {
+  width: calc(100vw - 24px);
+  max-height: 45vh;
+}
+
+.scan__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.scan__kicker {
+  font-family: var(--font-family-mono);
+  font-size: font-size("xxs");
+  font-weight: font-weight("semibold");
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--scan-accent);
+}
+
+.scan__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--scan-accent) 50%, transparent);
+  background: transparent;
+  color: var(--scan-ink);
+  cursor: pointer;
+
+  &:hover {
+    background: color-mix(in srgb, var(--scan-accent) 25%, transparent);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--scan-accent);
+    outline-offset: 2px;
+  }
+}
+
+.scan__title {
+  margin: 0;
+  font-size: font-size("md");
+  font-weight: font-weight("semibold");
+  line-height: 1.25;
+  text-shadow: 0 0 8px color-mix(in srgb, var(--scan-accent) 60%, transparent);
+}
+
+.scan__sub {
+  margin: 2px 0 0;
+  font-size: font-size("xs");
+  color: color-mix(in srgb, var(--scan-ink) 65%, transparent);
+}
+
+.scan__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--scan-accent) 35%, transparent);
+}
+
+.scan__row {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 10px;
+  font-size: font-size("xs");
+
+  dt {
+    font-size: font-size("xxs");
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--scan-ink) 55%, transparent);
+    padding-top: 1px;
+  }
+
+  dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+.scan__mono {
+  font-family: var(--font-family-mono);
+}
+
+.scan__note {
+  display: block;
+  font-size: font-size("xxs");
+  color: color-mix(in srgb, var(--scan-ink) 55%, transparent);
+}
+
+.scan__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 12px;
+
+  a {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: font-size("xs");
+    color: var(--scan-accent);
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--scan-accent);
+      outline-offset: 2px;
+    }
+  }
+}
+
+@keyframes scan-in {
+  from {
+    opacity: 0;
+    clip-path: polygon(0 0, 100% 0, 100% 0, 0 0);
+  }
+  to {
+    opacity: 1;
+    clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+  }
+}
+
+@keyframes scan-sweep {
+  0% {
+    top: 0;
+    opacity: 0.9;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}

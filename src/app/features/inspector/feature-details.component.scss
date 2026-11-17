@@ -59,6 +59,12 @@
     color: color("text-note");
   }
 
+  &__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+  }
+
   &__link {
     display: inline-flex;
     align-items: center;

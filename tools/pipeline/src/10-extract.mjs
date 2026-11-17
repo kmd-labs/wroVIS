@@ -7,7 +7,9 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { BBOX_MARGIN_DEG, BOUNDARY_FILE, CITY_RELATION_ID, PBF_FILE, WORK_DIR } from './lib/config.mjs';
+import { BBOX_MARGIN_DEG, BOUNDARY_FILE, CITY_RELATION_ID, OUT_DIR, PBF_FILE, WORK_DIR } from './lib/config.mjs';
+import { PLACE_CATS, buildWalkGraph } from './lib/walk-graph.mjs';
+import { groupBridges } from './lib/bridge-groups.mjs';
 import {
   bboxContainsPoint,
   bboxOfGeometry,
@@ -180,7 +182,58 @@ function cyclewayKind(tags) {
   return null;
 }
 
-const isTaggedNodeOfInterest = tags => tags.railway === 'tram_stop' || poiCategory(tags) !== null;
+/** Pedestrian network for the walking-reach view: every way a person may walk along. */
+const WALK_HIGHWAY = new Set([
+  'footway', 'path', 'pedestrian', 'steps', 'living_street', 'residential', 'service', 'unclassified', 'road', 'cycleway',
+  'tertiary', 'tertiary_link', 'secondary', 'secondary_link', 'primary', 'primary_link'
+]);
+function isWalkable(tags) {
+  if (!WALK_HIGHWAY.has(tags.highway) || tags.area === 'yes') return false;
+  if (tags.foot === 'no' || tags.access === 'no' || tags.access === 'private') return tags.foot === 'yes' || tags.foot === 'designated';
+  return true;
+}
+/** @type {Int32Array[]} node indices of walkable ways */
+const walkWays = [];
+/** @type {Int32Array[]} node indices of cycle ways (the `cycleways` layer: cycleways, designated paths, lanes and tracks) */
+const cycleWays = [];
+
+/** Street network: `highway` values kept in the `streets` layer (service roads only when named). */
+const STREET_HIGHWAY = new Set([
+  'motorway', 'motorway_link', 'trunk', 'trunk_link', 'primary', 'primary_link', 'secondary', 'secondary_link',
+  'tertiary', 'tertiary_link', 'unclassified', 'residential', 'living_street', 'pedestrian', 'road', 'service'
+]);
+function isStreet(tags) {
+  if (!STREET_HIGHWAY.has(tags.highway) || tags.area === 'yes') return false;
+  return tags.highway !== 'service' || Boolean(tags.name);
+}
+/** Coarse street class for styling: major roads, local streets, pedestrian zones and named service roads. */
+function streetClass(highway) {
+  const base = highway.replace(/_link$/, '');
+  if (['motorway', 'trunk', 'primary'].includes(base)) return 'primary';
+  if (['secondary', 'tertiary'].includes(base)) return 'secondary';
+  if (base === 'pedestrian' || base === 'living_street') return 'pedestrian';
+  if (base === 'service') return 'service';
+  return 'local';
+}
+function brunnel(tags) {
+  if (tags.bridge && tags.bridge !== 'no') return 'bridge';
+  if (tags.tunnel && tags.tunnel !== 'no') return 'tunnel';
+  return undefined;
+}
+
+/** `Street 12a` from addr:* tags (addr:place for addresses without a street), or undefined. */
+function formatAddress(tags) {
+  const number = tags['addr:housenumber'];
+  const street = tags['addr:street'] ?? tags['addr:place'];
+  return number && street ? `${street} ${number}` : undefined;
+}
+/** `pl:Hala Stulecia` → Wikipedia article URL. */
+function wikipediaUrl(value) {
+  const m = /^([a-z-]{2,12}):(.+)$/.exec(value ?? '');
+  return m ? `https://${m[1]}.wikipedia.org/wiki/${encodeURIComponent(m[2].trim().replace(/ /g, '_'))}` : undefined;
+}
+
+const isTaggedNodeOfInterest = tags => tags.railway === 'tram_stop' || poiCategory(tags) !== null || Boolean(formatAddress(tags));
 
 function isRelationOfInterest(tags) {
   if (tags.type === 'boundary' && tags.boundary === 'administrative' && (tags.admin_level === '9' || tags.admin_level === '8')) return true;
@@ -222,6 +275,26 @@ await pipeline(
           }
           if (n < 2) continue;
           const tags = it.tags && Object.keys(it.tags).length ? it.tags : null;
+          if (tags && cyclewayKind(tags)) {
+            // Cycle network for the bike route planner: same topology rule as the walk network.
+            const idxs = new Int32Array(refs.length);
+            let k = 0;
+            for (const ref of refs) {
+              const idx = nodeIndex.get(ref);
+              if (idx !== undefined) idxs[k++] = idx;
+            }
+            if (k >= 2) cycleWays.push(k === refs.length ? idxs : idxs.slice(0, k));
+          }
+          if (tags && isWalkable(tags)) {
+            // Walk network keeps node indices (shared nodes = topology) rather than plain coordinates.
+            const idxs = new Int32Array(refs.length);
+            let k = 0;
+            for (const ref of refs) {
+              const idx = nodeIndex.get(ref);
+              if (idx !== undefined) idxs[k++] = idx;
+            }
+            if (k >= 2) walkWays.push(k === refs.length ? idxs : idxs.slice(0, k));
+          }
           ways.set(it.id, { tags, coords: n === refs.length ? coords : coords.slice(0, n * 2), first: refs[0], last: refs[refs.length - 1] });
         } else if (it.type === 'relation') {
           seenRels++;
@@ -299,6 +372,7 @@ const layers = {
   tram_routes: [],
   tram_stops: [],
   cycleways: [],
+  streets: [],
   poi: []
 };
 
@@ -339,7 +413,13 @@ function buildingFeature(type, id, tags, geometry) {
     height: heightM,
     hsrc,
     year,
-    name: tags.name
+    name: tags.name,
+    addr: formatAddress(tags),
+    architect: tags.architect,
+    style: tags['building:architecture'] ?? tags.architecture,
+    heritage: tags.heritage ? 1 : undefined,
+    heritage_ref: tags['heritage:ref'] ?? tags['ref:zabytek'] ?? tags['ref:nid'],
+    wiki: wikipediaUrl(tags.wikipedia)
   }));
 }
 
@@ -465,7 +545,84 @@ for (const [id, way] of ways) {
     const geom = line();
     if (inCity(representativePoint(geom))) layers.waterways.push(feature('way', id, geom, clean({ kind: tags.waterway, name: tags.name })));
   }
+  if (isStreet(tags)) {
+    const geom = line();
+    if (inCity(representativePoint(geom))) {
+      layers.streets.push(feature('way', id, geom, clean({
+        class: streetClass(tags.highway),
+        kind: tags.highway,
+        name: tags.name,
+        ref: tags.ref,
+        brunnel: brunnel(tags),
+        oneway: tags.oneway === 'yes' || tags.oneway === '-1' ? 1 : undefined,
+        lanes: parseLevels(tags.lanes) ?? undefined,
+        maxspeed: /^\d+$/.test(tags.maxspeed ?? '') ? parseInt(tags.maxspeed, 10) : undefined,
+        length_m: Math.round(pathLengthMeters(geom.coordinates))
+      })));
+    }
+  }
 }
+
+// Streets carrying tram tracks: a street is flagged `tram` when at least half of its sampled points lie
+// within TRAM_NEAR_M of a tram track (tracks are separate ways in OSM, usually drawn in the street axis).
+const TRAM_NEAR_M = 14;
+const M_PER_DEG_LAT = 110540;
+const M_PER_DEG_LON = 111320 * Math.cos((((cityBbox[1] + cityBbox[3]) / 2) * Math.PI) / 180);
+const CELL_M = 100;
+const cellKey = (x, y) => `${Math.floor(x / CELL_M)}:${Math.floor(y / CELL_M)}`;
+const toXY = ([lon, lat]) => [(lon - cityBbox[0]) * M_PER_DEG_LON, (lat - cityBbox[1]) * M_PER_DEG_LAT];
+/** Tram track segments indexed by every 100 m grid cell their bounding box touches. */
+const tramGrid = new Map();
+for (const f of layers.tram_tracks) {
+  const pts = f.geometry.coordinates.map(toXY);
+  for (let i = 1; i < pts.length; i++) {
+    const [ax, ay] = pts[i - 1], [bx, by] = pts[i];
+    const seg = [ax, ay, bx, by];
+    for (let cx = Math.floor((Math.min(ax, bx) - TRAM_NEAR_M) / CELL_M); cx <= Math.floor((Math.max(ax, bx) + TRAM_NEAR_M) / CELL_M); cx++) {
+      for (let cy = Math.floor((Math.min(ay, by) - TRAM_NEAR_M) / CELL_M); cy <= Math.floor((Math.max(ay, by) + TRAM_NEAR_M) / CELL_M); cy++) {
+        const k = `${cx}:${cy}`;
+        if (!tramGrid.has(k)) tramGrid.set(k, []);
+        tramGrid.get(k).push(seg);
+      }
+    }
+  }
+}
+function distToSegment(px, py, [ax, ay, bx, by]) {
+  const dx = bx - ax, dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2)) : 0;
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+const nearTram = ([x, y]) => (tramGrid.get(cellKey(x, y)) ?? []).some(seg => distToSegment(x, y, seg) <= TRAM_NEAR_M);
+/** Points every ~10 m along a polyline (in metres), so long straight segments are sampled too. */
+function samplePoints(pts) {
+  const out = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const [ax, ay] = pts[i - 1], [bx, by] = pts[i];
+    const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 10));
+    for (let s = 1; s <= steps; s++) out.push([ax + ((bx - ax) * s) / steps, ay + ((by - ay) * s) / steps]);
+  }
+  return out;
+}
+let tramStreets = 0;
+for (const f of layers.streets) {
+  const samples = samplePoints(f.geometry.coordinates.map(toXY));
+  const near = samples.filter(nearTram).length;
+  if (near / samples.length >= 0.5) {
+    f.properties.tram = 1;
+    tramStreets++;
+  }
+}
+const streetAudit = { total: layers.streets.length, named: 0, tram: tramStreets, kmByClass: {} };
+for (const f of layers.streets) {
+  const p = f.properties;
+  if (p.name) streetAudit.named++;
+  streetAudit.kmByClass[p.class] = +((streetAudit.kmByClass[p.class] ?? 0) + p.length_m / 1000).toFixed(1);
+}
+audit.streets = streetAudit;
+log(`streets ${layers.streets.length} (named ${streetAudit.named}, with tram tracks ${tramStreets})`);
+const bridgeCount = groupBridges(layers.bridges);
+log(`bridges grouped: ${layers.bridges.length} segments → ${bridgeCount} bridges`);
 log(`ways processed: buildings ${layers.buildings.length}, water ${layers.water.length}, green ${layers.green.length}, bridges ${layers.bridges.length}, tram tracks ${layers.tram_tracks.length}, cycleways ${layers.cycleways.length}`);
 
 // POI nodes, then polygon POIs that have no node POI of the same kind inside (avoids double counting).
@@ -498,6 +655,117 @@ for (const p of polygonPois) {
 }
 log(`poi ${layers.poi.length} (polygon duplicates skipped ${polygonPoiSkipped}), tram stops ${layers.tram_stops.length}`);
 
+// ─── Buildings ⨝ address points and POI ──────────────────────────────────────
+// Addresses in OSM sit either on the building outline or on a separate node inside it; POIs inside a
+// building tell what is there. Both are joined by point-in-polygon through a 200 m grid of building bboxes.
+
+const BLD_CELL_DEG = 0.002;
+const bldGrid = new Map();
+const bldBoxes = layers.buildings.map(f => bboxOfGeometry(f.geometry));
+layers.buildings.forEach((_, i) => {
+  const [x0, y0, x1, y1] = bldBoxes[i];
+  for (let cx = Math.floor(x0 / BLD_CELL_DEG); cx <= Math.floor(x1 / BLD_CELL_DEG); cx++) {
+    for (let cy = Math.floor(y0 / BLD_CELL_DEG); cy <= Math.floor(y1 / BLD_CELL_DEG); cy++) {
+      const k = `${cx}:${cy}`;
+      if (!bldGrid.has(k)) bldGrid.set(k, []);
+      bldGrid.get(k).push(i);
+    }
+  }
+});
+/** Index of the building containing the point (smallest bbox wins for nested outlines), or -1. */
+function buildingAt(pt) {
+  let best = -1, bestArea = Infinity;
+  for (const i of bldGrid.get(`${Math.floor(pt[0] / BLD_CELL_DEG)}:${Math.floor(pt[1] / BLD_CELL_DEG)}`) ?? []) {
+    const b = bldBoxes[i];
+    if (!bboxContainsPoint(b, pt) || !pointInGeometry(pt, layers.buildings[i].geometry)) continue;
+    const a = (b[2] - b[0]) * (b[3] - b[1]);
+    if (a < bestArea) {
+      best = i;
+      bestArea = a;
+    }
+  }
+  return best;
+}
+
+const MAX_ADDRESSES = 3;
+const MAX_POI_NAMES = 3;
+const nodeAddresses = new Map();
+for (const n of taggedNodes) {
+  const addr = formatAddress(n.tags);
+  if (!addr) continue;
+  const i = buildingAt([n.lon, n.lat]);
+  if (i < 0) continue;
+  if (!nodeAddresses.has(i)) nodeAddresses.set(i, new Set());
+  nodeAddresses.get(i).add(addr);
+}
+let addrFromNodes = 0;
+for (const [i, set] of nodeAddresses) {
+  const p = layers.buildings[i].properties;
+  if (p.addr) continue;
+  const list = [...set].sort((a, b) => a.localeCompare(b, 'pl', { numeric: true }));
+  p.addr = list.slice(0, MAX_ADDRESSES).join('; ');
+  if (list.length > MAX_ADDRESSES) p.addr_more = list.length - MAX_ADDRESSES;
+  addrFromNodes++;
+}
+let poiJoined = 0;
+const poiByBuilding = new Map();
+for (const f of layers.poi) {
+  const i = buildingAt(f.geometry.coordinates);
+  if (i < 0) continue;
+  if (!poiByBuilding.has(i)) poiByBuilding.set(i, []);
+  poiByBuilding.get(i).push(f.properties);
+  poiJoined++;
+}
+for (const [i, list] of poiByBuilding) {
+  const p = layers.buildings[i].properties;
+  const names = [...new Set(list.map(x => x.name).filter(Boolean))];
+  p.poi_n = list.length;
+  if (names.length) p.poi = names.slice(0, MAX_POI_NAMES).join('; ');
+}
+const bAudit = audit.buildings;
+bAudit.withAddress = layers.buildings.filter(f => f.properties.addr).length;
+bAudit.addressFromNodes = addrFromNodes;
+bAudit.withPoi = poiByBuilding.size;
+bAudit.withHeritage = layers.buildings.filter(f => f.properties.heritage).length;
+bAudit.withArchitect = layers.buildings.filter(f => f.properties.architect).length;
+bAudit.withWikipedia = layers.buildings.filter(f => f.properties.wiki).length;
+log(`buildings: address ${bAudit.withAddress} (${addrFromNodes} from address nodes), with POI ${poiByBuilding.size} (${poiJoined} POI joined), heritage ${bAudit.withHeritage}, architect ${bAudit.withArchitect}, wikipedia ${bAudit.withWikipedia}`);
+
+// ─── Pedestrian graph (walking reach) ────────────────────────────────────────
+
+const POI_TO_PLACE = { shop: 'shop', food: 'food', education: 'education', health: 'health', culture: 'culture', sport: 'culture', finance: 'services', public: 'services' };
+const placeCat = name => PLACE_CATS.indexOf(name);
+const walkPlaces = [];
+for (const f of layers.poi) {
+  const cat = POI_TO_PLACE[f.properties.cat];
+  if (cat) walkPlaces.push({ lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1], cat: placeCat(cat) });
+}
+for (const f of layers.tram_stops) walkPlaces.push({ lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1], cat: placeCat('tram') });
+for (const f of layers.green) {
+  if (f.properties.kind !== 'park' || !f.properties.name) continue; // named parks and gardens, not every lawn or playground
+  const [lon, lat] = representativePoint(f.geometry);
+  walkPlaces.push({ lon, lat, cat: placeCat('park') });
+}
+const WALK_MARGIN_DEG = 0.005;
+const walk = buildWalkGraph({
+  ways: walkWays,
+  lon: nodeLon,
+  lat: nodeLat,
+  nodeCount,
+  bbox: [cityBbox[0] - WALK_MARGIN_DEG, cityBbox[1] - WALK_MARGIN_DEG, cityBbox[2] + WALK_MARGIN_DEG, cityBbox[3] + WALK_MARGIN_DEG],
+  places: walkPlaces
+});
+fs.mkdirSync(OUT_DIR, { recursive: true });
+fs.writeFileSync(path.join(OUT_DIR, 'walk.bin.gz'), walk.gz);
+audit.walk = walk.stats;
+
+// Cycle graph for the bike route planner: strictly the cycle network as connected in OSM (no gap bridging).
+const cycle = buildWalkGraph({ ways: cycleWays, lon: nodeLon, lat: nodeLat, nodeCount, bbox: walk.bbox ?? [cityBbox[0] - WALK_MARGIN_DEG, cityBbox[1] - WALK_MARGIN_DEG, cityBbox[2] + WALK_MARGIN_DEG, cityBbox[3] + WALK_MARGIN_DEG], places: [] });
+fs.writeFileSync(path.join(OUT_DIR, 'cycle.bin.gz'), cycle.gz);
+audit.cycle = cycle.stats;
+log(`cycle graph: ${JSON.stringify(cycle.stats)}, gzip ${(cycle.gz.length / 1e6).toFixed(2)} MB`);
+log(`walk graph: ${JSON.stringify(walk.stats)}, gzip ${(walk.gz.length / 1e6).toFixed(2)} MB`);
+
 // ─── Output ──────────────────────────────────────────────────────────────────
 
 fs.mkdirSync(WORK_DIR, { recursive: true });
@@ -524,7 +792,8 @@ summary.audit.buildings.coverage = {
   levelsPct: +((100 * a.withLevels) / a.total).toFixed(1),
   heightPct: +((100 * a.withHeight) / a.total).toFixed(1),
   startDatePct: +((100 * a.withStartDate) / a.total).toFixed(1),
-  namePct: +((100 * a.withName) / a.total).toFixed(1)
+  namePct: +((100 * a.withName) / a.total).toFixed(1),
+  addressPct: +((100 * a.withAddress) / a.total).toFixed(1)
 };
 fs.writeFileSync(path.join(WORK_DIR, 'extract-summary.json'), JSON.stringify(summary, null, 2));
 log(`done. ${JSON.stringify(summary.layers)}`);

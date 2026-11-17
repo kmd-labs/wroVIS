@@ -16,6 +16,8 @@ export interface StyleTools {
 
 export const HOVER: Expr = ['boolean', ['feature-state', 'hover'], false];
 export const SELECTED: Expr = ['boolean', ['feature-state', 'selected'], false];
+/** Set on a district while its row in the ranking panel is hovered or focused. */
+export const LIST_HOVER: Expr = ['boolean', ['feature-state', 'listHover'], false];
 
 /** Wraps a base colour so selected features turn accent and hovered features turn the cool highlight. */
 export function highlight(base: Expr | string, tools: StyleTools): Expr {

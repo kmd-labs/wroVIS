@@ -135,6 +135,8 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
+    // Sits at the bottom of the dock: when the legend makes the dock taller, the spare room goes above the slider.
+    margin-top: auto;
   }
 
   &__slider-head {
@@ -166,6 +168,130 @@
     width: 196px;
     padding-left: 18px;
     border-left: 1px solid color("line");
+  }
+
+  &__walk {
+    min-height: 20px;
+  }
+
+  &__walk-note {
+    margin: 0;
+    font-size: font-size("xs");
+    color: color("text-desc");
+  }
+
+  &__walk-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__walk-item {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+    column-gap: 6px;
+    align-items: baseline;
+    min-width: 0;
+
+    &--empty {
+      opacity: 0.55;
+    }
+  }
+
+  &__walk-count {
+    grid-row: 1 / span 2;
+    font-family: var(--font-family-mono);
+    font-size: font-size("md");
+    font-weight: font-weight("semibold");
+    color: color("text-bright");
+  }
+
+  &__walk-label,
+  &__walk-near {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__walk-label {
+    font-size: font-size("xs");
+    color: color("text-main");
+  }
+
+  &__walk-near {
+    font-size: font-size("xxs");
+    color: color("text-dim");
+  }
+
+  @include respond-to("mobile") {
+    &__walk-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  &__bike-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    min-width: 0;
+  }
+
+  &__bike-total {
+    display: flex;
+    flex-direction: column;
+    flex: none;
+  }
+
+  &__bike-km {
+    font-family: var(--font-family-mono);
+    font-size: font-size("lg");
+    font-weight: font-weight("semibold");
+    color: color("text-bright");
+    line-height: 1.1;
+  }
+
+  &__bike-legs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+    flex: 1;
+    min-width: 0;
+    max-height: 64px;
+    overflow-y: auto;
+    margin: 0;
+    padding: 2px 0 0;
+    list-style: none;
+    font-size: font-size("xs");
+
+    li {
+      display: inline-flex;
+      gap: 6px;
+      white-space: nowrap;
+    }
+  }
+
+  &__bike-leg-name {
+    color: color("text-dim");
+  }
+
+  &__bike-leg-km {
+    font-family: var(--font-family-mono);
+    color: color("text-main");
+  }
+
+  &__bike-leg--broken &__bike-leg-km {
+    color: color("danger");
+  }
+
+  &__bike-actions {
+    display: flex;
+    flex: none;
+    gap: 2px;
   }
 
   &__legend--wide {

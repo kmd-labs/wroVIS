@@ -9,16 +9,22 @@ import {
   MAP_FONT_ITALIC,
   MAP_FONT_REGULAR,
   SRC_BASEMAP,
+  SRC_BIKE_POINTS,
+  SRC_BIKE_ROUTE,
   SRC_CITY,
   SRC_DISTRICTS,
   SRC_DISTRICT_LABELS,
   SRC_TRAM_STOPS,
+  SRC_WALK_ORIGIN,
+  SRC_WALK_PLACES,
+  SRC_WALK_STREETS,
   SRC_WROVIS,
   assetUrl
 } from './map.config';
 import { StyleContext } from './map.types';
 import { Expr, StyleTools, byZoom, geometryIs, nameField, withVisibility } from './style.expr';
 import { thematicLayers } from './layers.registry';
+import { liveSourceData } from './live-sources';
 import { CyberRole, cyberToken } from '../../shared/cyber-palette';
 
 const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] };
@@ -58,7 +64,13 @@ export function buildMapStyle(ctx: StyleContext, data: StyleData, tools: StyleTo
       [SRC_CITY]: { type: 'geojson', data: assetUrl(DATA_PATHS.city) },
       [SRC_TRAM_STOPS]: { type: 'geojson', data: assetUrl(DATA_PATHS.tramStops), generateId: true },
       [SRC_DISTRICTS]: { type: 'geojson', data: data.districts ?? EMPTY_FC, promoteId: 'id' },
-      [SRC_DISTRICT_LABELS]: { type: 'geojson', data: data.districtLabels ?? EMPTY_FC }
+      [SRC_DISTRICT_LABELS]: { type: 'geojson', data: data.districtLabels ?? EMPTY_FC },
+      // Filled by WalkService after each click; the style carries the last written data so a rebuild keeps it.
+      [SRC_WALK_STREETS]: { type: 'geojson', data: liveSourceData.get(SRC_WALK_STREETS) ?? EMPTY_FC },
+      [SRC_WALK_PLACES]: { type: 'geojson', data: liveSourceData.get(SRC_WALK_PLACES) ?? EMPTY_FC, generateId: true },
+      [SRC_WALK_ORIGIN]: { type: 'geojson', data: liveSourceData.get(SRC_WALK_ORIGIN) ?? EMPTY_FC },
+      [SRC_BIKE_ROUTE]: { type: 'geojson', data: liveSourceData.get(SRC_BIKE_ROUTE) ?? EMPTY_FC },
+      [SRC_BIKE_POINTS]: { type: 'geojson', data: liveSourceData.get(SRC_BIKE_POINTS) ?? EMPTY_FC }
     },
     // Directional light of fill-extrusions: a colder, brighter key light makes neon façades pop.
     light:

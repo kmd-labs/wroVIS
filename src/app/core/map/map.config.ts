@@ -37,6 +37,13 @@ export const SRC_DISTRICTS = 'districts';
 export const SRC_CITY = 'city';
 export const SRC_TRAM_STOPS = 'tram_stops';
 export const SRC_DISTRICT_LABELS = 'district_labels';
+/** Walking reach ("15-minute city"): reached street pieces, reached places and the clicked origin, fed by WalkService. */
+export const SRC_WALK_STREETS = 'walk_streets';
+export const SRC_WALK_PLACES = 'walk_places';
+export const SRC_WALK_ORIGIN = 'walk_origin';
+/** Bike route planner (transport view): route legs, the short approaches to the network, and the waypoints. */
+export const SRC_BIKE_ROUTE = 'bike_route';
+export const SRC_BIKE_POINTS = 'bike_points';
 
 /** Data artefacts produced by `tools/pipeline` (paths relative to the document base). */
 export const DATA_PATHS = {
@@ -47,7 +54,9 @@ export const DATA_PATHS = {
   tramRoutes: 'assets/data/tram_routes.geojson',
   bridges: 'assets/data/bridges.geojson',
   stats: 'assets/data/stats.json',
-  manifest: 'assets/data/manifest.json'
+  manifest: 'assets/data/manifest.json',
+  walkGraph: 'assets/data/walk.bin.gz',
+  cycleGraph: 'assets/data/cycle.bin.gz'
 } as const;
 
 /** Resolves an asset path against `<base href>` so it stays correct under `/wroVIS/` on GitHub Pages. */

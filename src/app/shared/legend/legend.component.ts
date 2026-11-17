@@ -1,14 +1,26 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import { I18nService } from '../../core/i18n/i18n.service';
+import { AppState } from '../../core/state/app.state';
 import type { Dict } from '../../core/i18n/i18n.types';
-import type { DistrictMetric, LegendSpec } from '../../core/map/map.types';
+import { METRIC_FORMAT, type DistrictMetric, type LegendSpec } from '../../core/map/map.types';
 
 export const METRIC_LABEL: Record<DistrictMetric, keyof Dict> = {
   buildings_per_km2: 'metricBuildingsPerKm2',
   buildings: 'metricBuildings',
   poi_per_km2: 'metricPoiPerKm2',
   green_pct: 'metricGreenPct',
-  tram_stops: 'metricTramStops'
+  tram_stops: 'metricTramStops',
+  streets_km_per_km2: 'metricStreetsPerKm2',
+  tram_street_pct: 'metricTramStreetPct',
+  pedestrian_km: 'metricPedestrianKm',
+  slow_street_pct: 'metricSlowStreetPct',
+  streets_km: 'metricStreetsKm',
+  area_km2: 'metricArea',
+  poi: 'metricPoi',
+  water_pct: 'metricWaterPct',
+  bridges: 'metricBridges',
+  levels_mean: 'metricLevelsMean',
+  max_height_m: 'metricMaxHeight'
 };
 
 /**
@@ -24,8 +36,25 @@ export const METRIC_LABEL: Record<DistrictMetric, keyof Dict> = {
       <ul class="legend legend--categorical" [class.legend--wide]="wide()" [attr.aria-label]="t.legend">
         @for (item of items; track item.labelKey) {
           <li class="legend__item">
-            <span class="legend__swatch" [class]="'legend__swatch legend__swatch--' + (item.shape ?? 'fill')" [style.--swatch]="'var(--color-' + item.token + ')'" aria-hidden="true"></span>
-            <span class="legend__label">{{ t[item.labelKey] }}</span>
+            @if (item.fixed) {
+              <span class="legend__pill legend__pill--fixed">
+                <span class="legend__swatch" [class]="'legend__swatch legend__swatch--' + (item.shape ?? 'fill')" [style.--swatch]="'var(--color-' + item.token + ')'" aria-hidden="true"></span>
+                <span class="legend__label">{{ t[item.labelKey] }}</span>
+              </span>
+            } @else {
+              <!-- Each entry is a pill that switches its category or layer on the map. -->
+              @let off = isOff(item.labelKey);
+              <button
+                type="button"
+                class="legend__pill"
+                [class.legend__pill--off]="off"
+                [attr.aria-pressed]="!off"
+                [title]="off ? t.legendShow : t.legendHide"
+                (click)="toggle(item.labelKey)">
+                <span class="legend__swatch" [class]="'legend__swatch legend__swatch--' + (item.shape ?? 'fill')" [style.--swatch]="'var(--color-' + item.token + ')'" aria-hidden="true"></span>
+                <span class="legend__label">{{ t[item.labelKey] }}</span>
+              </button>
+            }
           </li>
         }
       </ul>
@@ -50,12 +79,21 @@ export const METRIC_LABEL: Record<DistrictMetric, keyof Dict> = {
 })
 export class LegendComponent {
   readonly i18n = inject(I18nService);
+  private readonly state = inject(AppState);
   readonly spec = input.required<LegendSpec>();
 
   readonly categorical = computed(() => {
     const spec = this.spec();
     return spec.kind === 'categorical' ? spec.items : null;
   });
+
+  isOff(key: string): boolean {
+    return this.state.hiddenLegend().has(`${this.state.currentView()}:${key}`);
+  }
+
+  toggle(key: string) {
+    this.state.toggleLegend(this.state.currentView(), key);
+  }
 
   readonly wide = computed(() => {
     const spec = this.spec();
@@ -65,8 +103,9 @@ export class LegendComponent {
   readonly ordinal = computed(() => {
     const spec = this.spec();
     if (spec.kind !== 'ordinal') return null;
-    const nf = new Intl.NumberFormat(this.i18n.lang(), { maximumFractionDigits: spec.metric === 'green_pct' ? 1 : 0 });
-    const unit = spec.metric === 'green_pct' ? ' %' : '';
+    const fmt = METRIC_FORMAT[spec.metric];
+    const nf = new Intl.NumberFormat(this.i18n.lang(), { maximumFractionDigits: fmt.digits });
+    const unit = fmt.unit ? ` ${fmt.unit}` : '';
     return {
       tokens: spec.tokens,
       low: nf.format(spec.low) + unit,

@@ -28,6 +28,55 @@
     min-width: 0;
   }
 
+  &__pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    max-width: 100%;
+    padding: 2px 9px 2px 7px;
+    border: 1px solid color("line");
+    border-radius: radius("pill");
+    background: color("panel-bg-solid");
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background transition("fast"), opacity transition("fast");
+
+    &:hover {
+      background: color("surface-muted");
+    }
+
+    &:focus-visible {
+      outline: 2px solid color("accent");
+      outline-offset: 1px;
+    }
+
+    // Switched off: faded, label struck through, swatch hollow.
+    &--off {
+      opacity: 0.45;
+
+      .legend__label {
+        text-decoration: line-through;
+      }
+
+      .legend__swatch {
+        background: transparent;
+        border: 1px dashed var(--swatch);
+      }
+    }
+
+    &--fixed {
+      cursor: default;
+      border-style: dashed;
+
+      &:hover {
+        background: color("panel-bg-solid");
+      }
+    }
+  }
+
   &__label {
     white-space: nowrap;
     overflow: hidden;

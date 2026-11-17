@@ -43,6 +43,7 @@ import { MapTooltipComponent } from './features/inspector/map-tooltip.component'
 import { describeFeature } from './features/inspector/feature-format';
 import { LegendComponent, METRIC_LABEL } from './shared/legend/legend.component';
 import { CARD_VIEWS, CyberScanCardComponent } from './features/inspector/cyber-scan-card.component';
+import { CyberRole, cyberToken } from './shared/cyber-palette';
 import { DistrictRankingComponent } from './features/districts/district-ranking.component';
 import { WalkService } from './core/walk/walk.service';
 import { BikeRouteService, pointLabel } from './core/bike/bike-route.service';
@@ -311,6 +312,14 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   // ─── Walking reach ────────────────────────────────────────────────────────
 
   readonly isBuildings = computed(() => this.state.currentView() === 'buildings');
+
+  /** In the CyberPunk view the dock takes the neon "scanner" look of the feature card. */
+  readonly neonDock = computed(() => this.state.currentView() === 'cyberpunk');
+
+  /** CSS reference to a colour role of the active neon palette (`--color-cy-<palette>-<role>`). */
+  cyberVar(role: CyberRole): string {
+    return `var(--color-${cyberToken(this.state.params().cyberPalette, role)})`;
+  }
   /** The 3D buildings view carries the walking reach when it is switched on (stats in the dock, slider = time limit). */
   readonly isWalk = computed(() => this.isBuildings() && this.state.walkEnabled());
   /** The buildings view's only slider is the walking time, so it goes away with the reach. */

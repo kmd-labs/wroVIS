@@ -17,7 +17,7 @@ export const PL: Dict = {
   viewBridges: 'Mosty i woda',
   viewTransit: 'Transport',
   viewDistricts: 'Osiedla',
-  viewCyberpunk: 'CyberPunk',
+  viewCyberpunk: 'Neon View',
   viewBuildingsDesc: 'Budynki wg wysokości i funkcji; kliknij dowolne miejsce, by zobaczyć zasięg spaceru',
   viewBridgesDesc: 'Odra, kanały i sieć mostów wg typu',
   viewTransitDesc: 'Tory tramwajowe, przystanki, drogi rowerowe i zasięg dojścia',

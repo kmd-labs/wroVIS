@@ -20,7 +20,6 @@ import { PickedFeature, StyleContext, ViewId } from './map.types';
 import { VIEWS } from './layers.registry';
 import { buildMapStyle } from './style.builder';
 import { StyleTools } from './style.expr';
-import { StopPulse } from './stop-pulse';
 
 export type MapStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -55,7 +54,6 @@ export class MapService {
   private hovered: PickedFeature | null = null;
   private selectedRef: FeatureIdentifier | null = null;
   private appliedView: ViewId | null = null;
-  private pulse: StopPulse | null = null;
   private hud = { top: 0, bottom: 0 };
   private leftInset = 0;
 
@@ -85,17 +83,6 @@ export class MapService {
       if (!this.map || !this.styleLoaded() || this.appliedView === view) return;
       this.appliedView = view;
       untracked(() => this.flyToView(view));
-    });
-
-    // Tram stops pulse while the neon view is active (and the user has not asked for reduced motion).
-    // Only after "ready": a running animation keeps repainting, so MapLibre would never fire the first `idle`.
-    effect(() => {
-      const active = this.state.currentView() === 'cyberpunk' && this.status() === 'ready';
-      untracked(() => {
-        if (!this.pulse) return;
-        if (active && !prefersReducedMotion()) this.zone.runOutsideAngular(() => this.pulse?.start());
-        else this.pulse.stop();
-      });
     });
 
     // District hovered in the ranking panel mirrors into `feature-state.listHover`.
@@ -152,7 +139,6 @@ export class MapService {
     // ODbL requires a visible OpenStreetMap credit: compact control, styled in styles.scss.
     map.addControl(new AttributionControl({ compact: true }), 'bottom-right');
 
-    this.pulse = new StopPulse(map);
     map.once('style.load', () => this.zone.run(() => this.styleLoaded.set(true)));
     map.once('load', () => {
       this.bindInteractions(map);
@@ -189,8 +175,6 @@ export class MapService {
   }
 
   destroy() {
-    this.pulse?.stop();
-    this.pulse = null;
     this.map?.remove();
     this.map = null;
     this.hovered = null;

@@ -1,7 +1,9 @@
 @use "variables" as *;
 
-// Neon scanner card of the CyberPunk view. Colours come from the --color-cy-* tokens passed in as
-// --scan-accent (category of the picked feature), --scan-bg and --scan-ink by the component.
+// Feature card of the Neon View ("neon glass"): rounded dark glass with a gradient outline from the feature's
+// category colour (--scan-accent) to the palette highlight (--scan-hl), and a soft coloured shadow.
+// --scan-bg / --scan-ink come from the active neon palette (--color-cy-*). The .scan--kmd variant below is
+// the 3D buildings view card in the regular KMD theme.
 
 .scan {
   position: fixed;
@@ -28,21 +30,14 @@
 
 .scan__pin {
   position: absolute;
-  left: -6px;
-  top: -6px;
-  width: 12px;
-  height: 12px;
+  left: -5px;
+  top: -5px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
+  background: var(--scan-ink);
   border: 2px solid var(--scan-accent);
-  box-shadow: 0 0 10px var(--scan-accent);
-
-  &::after {
-    content: "";
-    position: absolute;
-    inset: 2px;
-    border-radius: 50%;
-    background: var(--scan-ink);
-  }
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--scan-accent) 25%, transparent);
 }
 
 .scan__card {
@@ -56,38 +51,19 @@
   padding: 12px 14px 14px;
   pointer-events: auto;
   color: var(--scan-ink);
-  background: color-mix(in srgb, var(--scan-bg) 90%, transparent);
-  border: 1px solid var(--scan-accent);
-  box-shadow:
-    0 0 18px color-mix(in srgb, var(--scan-accent) 35%, transparent),
-    inset 0 0 24px color-mix(in srgb, var(--scan-accent) 10%, transparent);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  // Cut corner, the signature of the scanner frame.
-  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
-  animation: scan-in 260ms ease-out;
-
-  // Sweeping scan line on open.
-  &::after {
-    content: "";
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 0;
-    height: 2px;
-    background: var(--scan-accent);
-    box-shadow: 0 0 12px var(--scan-accent);
-    opacity: 0;
-    animation: scan-sweep 700ms ease-out;
-    pointer-events: none;
-  }
+  // Gradient outline: an opaque glass fill on the padding box over a gradient on the border box.
+  border: 1px solid transparent;
+  border-radius: radius("card");
+  background:
+    linear-gradient(color-mix(in srgb, var(--scan-bg) 94%, transparent), color-mix(in srgb, var(--scan-bg) 94%, transparent)) padding-box,
+    linear-gradient(135deg, var(--scan-accent), var(--scan-hl)) border-box;
+  box-shadow: 0 12px 40px color-mix(in srgb, var(--scan-accent) 26%, transparent);
+  backdrop-filter: blur(blur-token("md"));
+  -webkit-backdrop-filter: blur(blur-token("md"));
+  animation: glass-in 220ms ease-out;
 
   @media (prefers-reduced-motion: reduce) {
     animation: none;
-
-    &::after {
-      animation: none;
-    }
   }
 }
 
@@ -101,12 +77,7 @@
     border-top: 3px solid var(--scan-accent);
     border-radius: radius("card");
     box-shadow: 0 8px 30px color("shadow-panel");
-    clip-path: none;
-    animation: kmd-card-in 220ms ease-out;
-
-    &::after {
-      display: none;
-    }
+    animation: glass-in 220ms ease-out;
 
     @media (prefers-reduced-motion: reduce) {
       animation: none;
@@ -114,9 +85,8 @@
   }
 
   .scan__kicker {
-    font-family: var(--font-family);
-    letter-spacing: 0.08em;
-    color: color("text-dim");
+    background: color("surface-muted");
+    color: color("text-desc");
   }
 
   .scan__title {
@@ -148,20 +118,16 @@
     color: color("link-color");
   }
 
-  .scan__pin {
-    box-shadow: none;
-  }
 }
 
-@keyframes kmd-card-in {
+@keyframes glass-in {
   from {
     opacity: 0;
-    transform-origin: left center;
-    scale: 0.96;
+    translate: 0 6px;
   }
   to {
     opacity: 1;
-    scale: 1;
+    translate: 0 0;
   }
 }
 
@@ -179,12 +145,23 @@
 }
 
 .scan__kicker {
-  font-family: var(--font-family-mono);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px 2px 7px;
+  border-radius: radius("pill");
+  background: color-mix(in srgb, var(--scan-accent) 18%, transparent);
   font-size: font-size("xxs");
   font-weight: font-weight("semibold");
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--scan-accent);
+  color: var(--scan-ink);
+
+  &::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--scan-accent);
+  }
 }
 
 .scan__close {
@@ -194,13 +171,14 @@
   width: 24px;
   height: 24px;
   padding: 0;
-  border: 1px solid color-mix(in srgb, var(--scan-accent) 50%, transparent);
+  border: 1px solid color-mix(in srgb, var(--scan-ink) 22%, transparent);
+  border-radius: radius("pill");
   background: transparent;
   color: var(--scan-ink);
   cursor: pointer;
 
   &:hover {
-    background: color-mix(in srgb, var(--scan-accent) 25%, transparent);
+    background: color-mix(in srgb, var(--scan-ink) 12%, transparent);
   }
 
   &:focus-visible {
@@ -214,7 +192,6 @@
   font-size: font-size("md");
   font-weight: font-weight("semibold");
   line-height: 1.25;
-  text-shadow: 0 0 8px color-mix(in srgb, var(--scan-accent) 60%, transparent);
 }
 
 .scan__sub {
@@ -229,7 +206,7 @@
   gap: 6px;
   margin: 10px 0 0;
   padding-top: 10px;
-  border-top: 1px solid color-mix(in srgb, var(--scan-accent) 35%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--scan-ink) 14%, transparent);
 }
 
 .scan__row {
@@ -239,11 +216,8 @@
   font-size: font-size("xs");
 
   dt {
-    font-size: font-size("xxs");
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: color-mix(in srgb, var(--scan-ink) 55%, transparent);
-    padding-top: 1px;
+    font-size: font-size("xs");
+    color: color-mix(in srgb, var(--scan-ink) 58%, transparent);
   }
 
   dd {
@@ -274,7 +248,7 @@
     align-items: center;
     gap: 5px;
     font-size: font-size("xs");
-    color: var(--scan-accent);
+    color: var(--scan-hl);
     text-decoration: none;
 
     &:hover {
@@ -285,27 +259,5 @@
       outline: 2px solid var(--scan-accent);
       outline-offset: 2px;
     }
-  }
-}
-
-@keyframes scan-in {
-  from {
-    opacity: 0;
-    clip-path: polygon(0 0, 100% 0, 100% 0, 0 0);
-  }
-  to {
-    opacity: 1;
-    clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
-  }
-}
-
-@keyframes scan-sweep {
-  0% {
-    top: 0;
-    opacity: 0.9;
-  }
-  100% {
-    top: 100%;
-    opacity: 0;
   }
 }

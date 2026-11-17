@@ -643,15 +643,6 @@ function walkLayers(ctx: StyleContext, tools: StyleTools): { ground: LayerSpecif
 
 // ─── CyberPunk (neon night map) ─────────────────────────────────────────────
 
-/** Animated by `StopPulse` in MapService; its static paint here is the resting frame. */
-export const CY_PULSE_LAYER = 'cy-stop-pulse';
-
-/** Pulse ring radius at the zoom stops below; the animation scales it up to ×3. */
-export const CY_PULSE_RADIUS: [number, number][] = [
-  [11, 3],
-  [14, 6],
-  [17, 10]
-];
 
 /** Building height in metres (the pipeline always writes `height`, estimated if not tagged). */
 const HEIGHT_EXPR: Expr = ['coalesce', ['get', 'height'], 6];
@@ -710,7 +701,7 @@ const cyberView: ViewDefinition = {
   interactive: ['cy-stops', 'cy-bld', 'cy-tram'],
   legendLayers: {
     trTramTrack: ['cy-tram', 'cy-tram-glow'],
-    trTramStop: ['cy-stops', 'cy-stop-glow', CY_PULSE_LAYER, 'cy-stop-labels'],
+    trTramStop: ['cy-stops', 'cy-stop-glow', 'cy-stop-halo', 'cy-stop-labels'],
     trCycleway: ['cy-cycle', 'cy-cycle-glow']
   },
   layers: (ctx, tools) => {
@@ -794,17 +785,18 @@ const cyberView: ViewDefinition = {
         }
       },
       {
-        id: CY_PULSE_LAYER,
+        // Quiet static ring around each stop (no animation).
+        id: 'cy-stop-halo',
         type: 'circle',
         source: SRC_TRAM_STOPS,
         minzoom: 11,
         paint: {
-          'circle-radius': byZoom(CY_PULSE_RADIUS, 1),
+          'circle-radius': byZoom([[11, 6], [14, 11], [17, 18]], 1),
           'circle-color': c('stop'),
           'circle-opacity': 0,
           'circle-stroke-color': c('stop'),
-          'circle-stroke-width': 1.5,
-          'circle-stroke-opacity': 0,
+          'circle-stroke-width': 1,
+          'circle-stroke-opacity': 0.45,
           'circle-pitch-alignment': 'map'
         }
       },

@@ -351,9 +351,9 @@
   }
 }
 
-// ─── CyberPunk: neon "scanner" dock ─────────────────────────────────────────
-// Same look as the scanner card (cyber-scan-card.component.scss). The dock redefines the colour tokens its
-// children read, so the design-system slider, switcher, buttons and the legend pills turn neon on their own.
+// ─── Neon View: "neon glass" dock ───────────────────────────────────────────
+// Same look as the Neon View feature card (cyber-scan-card.component.scss). The dock redefines the colour
+// tokens its children read, so the design-system slider, switcher, buttons and legend pills follow the palette.
 // --neon-accent / --neon-hl / --neon-bg / --neon-ink come from the active neon palette (--color-cy-*).
 .dock.dock--neon {
   --color-text-bright: var(--neon-ink);
@@ -374,84 +374,30 @@
   --color-btn-hover: color-mix(in srgb, var(--neon-accent) 22%, transparent);
   --color-shadow-panel: transparent;
 
-  position: relative;
   color: var(--neon-ink);
-  background: color-mix(in srgb, var(--neon-bg) 90%, transparent);
-  border: 1px solid var(--neon-accent);
-  border-radius: 0;
-  box-shadow:
-    0 0 18px color-mix(in srgb, var(--neon-accent) 35%, transparent),
-    inset 0 0 24px color-mix(in srgb, var(--neon-accent) 10%, transparent);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  // Cut corner, the signature of the scanner frame.
-  clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
-
-  // Sweeping scan line when the view opens.
-  &::after {
-    content: "";
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 0;
-    height: 2px;
-    background: var(--neon-accent);
-    box-shadow: 0 0 12px var(--neon-accent);
-    opacity: 0;
-    pointer-events: none;
-    animation: neon-sweep 800ms ease-out;
-  }
-
-  .dock__title {
-    font-family: var(--font-family-mono);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    text-shadow: 0 0 8px color-mix(in srgb, var(--neon-accent) 60%, transparent);
-  }
+  // Gradient outline (palette accent → highlight) over dark glass, soft coloured shadow, KMD panel radius.
+  border: 1px solid transparent;
+  background:
+    linear-gradient(color-mix(in srgb, var(--neon-bg) 92%, transparent), color-mix(in srgb, var(--neon-bg) 92%, transparent)) padding-box,
+    linear-gradient(135deg, var(--neon-accent), var(--neon-hl)) border-box;
+  box-shadow: 0 14px 44px color-mix(in srgb, var(--neon-accent) 24%, transparent);
 
   .dock__icon {
     background: color-mix(in srgb, var(--neon-accent) 18%, transparent);
     color: var(--neon-accent);
-    border-radius: 0;
   }
 
   .dock__legend {
-    border-left-color: color-mix(in srgb, var(--neon-accent) 35%, transparent);
-  }
-
-  .dock__legend-title,
-  .dock__slider-label {
-    font-family: var(--font-family-mono);
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--neon-accent);
+    border-left-color: color-mix(in srgb, var(--neon-ink) 14%, transparent);
   }
 
   .dock__value {
     color: var(--neon-hl);
-    text-shadow: 0 0 6px color-mix(in srgb, var(--neon-hl) 50%, transparent);
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    &::after {
-      animation: none;
-    }
   }
 
   @include respond-to("tablet") {
     .dock__legend {
-      border-top-color: color-mix(in srgb, var(--neon-accent) 35%, transparent);
+      border-top-color: color-mix(in srgb, var(--neon-ink) 14%, transparent);
     }
-  }
-}
-
-@keyframes neon-sweep {
-  0% {
-    top: 0;
-    opacity: 0.9;
-  }
-  100% {
-    top: 100%;
-    opacity: 0;
   }
 }

@@ -193,7 +193,6 @@ export const EN: Dict = {
   propHeritage: 'Heritage',
   heritageListed: 'Listed monument',
   heritageRef: 'Register no.',
-  scanKicker: 'Scan',
 
   // Attribution
   dataAttribution: 'Map data © OpenStreetMap contributors (ODbL) · Basemap: OpenFreeMap',

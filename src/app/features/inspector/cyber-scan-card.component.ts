@@ -21,7 +21,7 @@ const MARGIN = 12;
 
 /**
  * Details card pinned to the clicked point with a leader line, framed in the colour of the feature's category.
- * In the CyberPunk view it is a dark neon "scanner" panel; in the 3D buildings view it takes the KMD glass look,
+ * In the Neon View it is dark "neon glass" with a gradient outline; in the 3D buildings view it takes the KMD look,
  * so the map stays visible while the walking reach plays (unlike the modal details popup). It follows the camera
  * by re-projecting the point on every map `move`, writing transforms directly to the DOM outside Angular.
  */
@@ -31,7 +31,7 @@ const MARGIN = 12;
   imports: [LucideAngularModule],
   template: `
     @if (card(); as c) {
-      <div class="scan" [class.scan--kmd]="!c.neon" [class.scan--docked]="bp.mobile()" [style.--scan-accent]="c.accent" [style.--scan-bg]="c.bg" [style.--scan-ink]="c.ink">
+      <div class="scan" [class.scan--kmd]="!c.neon" [class.scan--docked]="bp.mobile()" [style.--scan-accent]="c.accent" [style.--scan-hl]="c.hl" [style.--scan-bg]="c.bg" [style.--scan-ink]="c.ink">
         <svg class="scan__leader" aria-hidden="true"><line #leader x1="0" y1="0" x2="0" y2="0" /></svg>
         <span class="scan__pin" #pin aria-hidden="true"></span>
         <section class="scan__card" #card role="dialog" [attr.aria-label]="c.title">
@@ -115,6 +115,7 @@ export class CyberScanCardComponent {
         neon: false,
         kicker: t.inspBuilding,
         accent: `var(--color-${categoricalToken(slot, this.theme.mode())})`,
+        hl: `var(--color-${categoricalToken(slot, this.theme.mode())})`,
         bg: 'var(--color-panel-bg-solid)',
         ink: 'var(--color-text-main)',
         lngLat: pick.lngLat
@@ -128,8 +129,9 @@ export class CyberScanCardComponent {
     return {
       ...d,
       neon: true,
-      kicker: `${t.scanKicker} // ${typeLabel}`,
+      kicker: typeLabel,
       accent: token(role),
+      hl: token('select'),
       bg: token('bg'),
       ink: token('hover'),
       lngLat: pick.lngLat

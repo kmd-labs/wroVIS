@@ -195,7 +195,6 @@ export interface Dict {
   propHeritage: string;
   heritageListed: string;
   heritageRef: string;
-  scanKicker: string;
 
   // Attribution
   dataAttribution: string;

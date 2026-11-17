@@ -193,7 +193,6 @@ export const PL: Dict = {
   propHeritage: 'Zabytek',
   heritageListed: 'Wpisany do rejestru',
   heritageRef: 'Nr rej.',
-  scanKicker: 'Skan',
 
   // Attribution
   dataAttribution: 'Dane mapy © autorzy OpenStreetMap (ODbL) · Mapa bazowa: OpenFreeMap',

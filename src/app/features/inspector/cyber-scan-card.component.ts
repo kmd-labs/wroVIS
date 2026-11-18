@@ -8,11 +8,31 @@ import { MapService } from '../../core/map/map.service';
 import { AppState } from '../../core/state/app.state';
 import { CYBER_BUILDING_ROLE, CyberRole, cyberToken } from '../../shared/cyber-palette';
 import { BUILDING_CLASS_SLOT, categoricalToken } from '../../shared/scales';
-import type { ViewId } from '../../core/map/map.types';
-
-/** Views that show a card pinned next to the clicked feature instead of the modal details popup. */
-export const CARD_VIEWS: readonly ViewId[] = ['cyberpunk', 'buildings'];
+import type { Dict } from '../../core/i18n/i18n.types';
+import type { PickedFeature } from '../../core/map/map.types';
 import { describeFeature } from './feature-format';
+
+/** Kind of the picked feature, by the style layer it was drawn with. */
+type PickKind = 'building' | 'stop' | 'track' | 'bridge' | 'district' | 'place';
+
+function pickKind(pick: PickedFeature): PickKind {
+  const id = pick.layerId;
+  if (id === 'bld-extrusion' || id === 'cy-bld') return 'building';
+  if (id === 'tr-stops' || id === 'cy-stops') return 'stop';
+  if (id === 'tr-tracks' || id === 'cy-tram') return 'track';
+  if (id.startsWith('br-')) return 'bridge';
+  if (id.startsWith('di-')) return 'district';
+  return 'place';
+}
+
+const KICKER: Record<PickKind, keyof Dict> = {
+  building: 'inspBuilding',
+  stop: 'inspTramStop',
+  track: 'inspTramTrack',
+  bridge: 'inspBridge',
+  district: 'inspDistrict',
+  place: 'wkPlace'
+};
 
 /** Horizontal gap between the pinned point and the card, px. */
 const GAP = 36;
@@ -20,10 +40,10 @@ const GAP = 36;
 const MARGIN = 12;
 
 /**
- * Details card pinned to the clicked point with a leader line, framed in the colour of the feature's category.
- * In the Neon View it is dark "neon glass" with a gradient outline; in the 3D buildings view it takes the KMD look,
- * so the map stays visible while the walking reach plays (unlike the modal details popup). It follows the camera
- * by re-projecting the point on every map `move`, writing transforms directly to the DOM outside Angular.
+ * Details card of any clicked feature, pinned to the clicked point with a leader line and framed in the colour of
+ * the feature's category. On the neon map it is dark "neon glass" with a gradient outline; otherwise it takes the
+ * KMD look. A building card lists the shops, restaurants and other places inside. The card follows the camera by
+ * re-projecting the point on every map `move`, writing transforms directly to the DOM outside Angular.
  */
 @Component({
   selector: 'app-cyber-scan-card',
@@ -59,6 +79,32 @@ const MARGIN = 12;
                 </div>
               }
             </dl>
+          }
+          @if (c.places?.length) {
+            <section class="scan__places" [attr.aria-label]="t().inspPlacesTitle">
+              <h3 class="scan__places-title">
+                {{ t().inspPlacesTitle }}
+                <span class="scan__places-count">{{ c.placeCount }}</span>
+              </h3>
+              @for (group of c.places; track group.label) {
+                <div class="scan__place-group">
+                  <span class="scan__place-cat">{{ group.label }}</span>
+                  <ul class="scan__place-list">
+                    @for (item of group.items; track $index) {
+                      <li>
+                        <span class="scan__place-name">{{ item.name }}</span>
+                        @if (item.tag) {
+                          <span class="scan__place-tag">{{ item.tag }}</span>
+                        }
+                      </li>
+                    }
+                  </ul>
+                </div>
+              }
+              @if (c.placeCount && c.placeCount > c.listed) {
+                <p class="scan__note">{{ t().andMore }} {{ c.placeCount - c.listed }}</p>
+              }
+            </section>
           }
           @if (c.osmUrl || c.wikiUrl) {
             <div class="scan__links">
@@ -103,39 +149,23 @@ export class CyberScanCardComponent {
 
   readonly card = computed(() => {
     const pick = this.state.selected();
-    const view = this.state.currentView();
-    if (!pick || !CARD_VIEWS.includes(view)) return null;
+    if (!pick) return null;
     const t = this.i18n.t();
     const d = describeFeature(pick, t, this.i18n.lang(), this.data.stats());
-    if (view === 'buildings') {
-      // KMD look: glass panel in the theme, framed in the building's category colour.
+    const kind = pickKind(pick);
+    const listed = (d.places ?? []).reduce((n, g) => n + g.items.length, 0);
+    const base = { ...d, listed, kicker: t[KICKER[kind]], lngLat: pick.lngLat };
+    const palette = this.state.palette();
+    if (palette === 'normal') {
+      // KMD look: glass panel in the theme, framed in the building's category colour (accent for the rest).
       const slot = BUILDING_CLASS_SLOT[String(pick.properties['class'])] ?? 'light';
-      return {
-        ...d,
-        neon: false,
-        kicker: t.inspBuilding,
-        accent: `var(--color-${categoricalToken(slot, this.theme.mode())})`,
-        hl: `var(--color-${categoricalToken(slot, this.theme.mode())})`,
-        bg: 'var(--color-panel-bg-solid)',
-        ink: 'var(--color-text-main)',
-        lngLat: pick.lngLat
-      };
+      const accent = kind === 'building' ? `var(--color-${categoricalToken(slot, this.theme.mode())})` : 'var(--color-accent)';
+      return { ...base, neon: false, accent, hl: accent, bg: 'var(--color-panel-bg-solid)', ink: 'var(--color-text-main)' };
     }
-    const isBuilding = pick.layerId === 'cy-bld';
-    const role: CyberRole = isBuilding ? (CYBER_BUILDING_ROLE[String(pick.properties['class'])] ?? 'oth') : pick.layerId === 'cy-stops' ? 'stop' : 'tram';
-    const typeLabel = isBuilding ? t.inspBuilding : pick.layerId === 'cy-stops' ? t.inspTramStop : t.inspTramTrack;
-    const palette = this.state.params().cyberPalette;
-    const token = (r: CyberRole) => `var(--color-${cyberToken(palette, r)})`;
-    return {
-      ...d,
-      neon: true,
-      kicker: typeLabel,
-      accent: token(role),
-      hl: token('select'),
-      bg: token('bg'),
-      ink: token('hover'),
-      lngLat: pick.lngLat
-    };
+    const role: CyberRole =
+      kind === 'building' ? (CYBER_BUILDING_ROLE[String(pick.properties['class'])] ?? 'oth') : kind === 'stop' ? 'stop' : kind === 'track' ? 'tram' : 'outline';
+    const token = (r: CyberRole) => `var(--color-${cyberToken(r, palette)})`;
+    return { ...base, neon: true, accent: token(role), hl: token('select'), bg: token('panel'), ink: token('hover') };
   });
 
   constructor() {
@@ -173,7 +203,7 @@ export class CyberScanCardComponent {
     if (this.card()) this.state.selected.set(null);
   }
 
-  /** Places pin, leader and card for the current camera; the card flips sides and clamps between header and dock. */
+  /** Places pin, leader and card for the current camera; the card flips sides and stays clear of the header and the dock. */
   private position() {
     const card = this.cardEl()?.nativeElement;
     const pin = this.pinEl()?.nativeElement;
@@ -185,7 +215,9 @@ export class CyberScanCardComponent {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const headerBottom = document.querySelector('.header')?.getBoundingClientRect().bottom ?? 64;
-    const dockTop = document.querySelector('.dock')?.getBoundingClientRect().top ?? vh;
+    // The dock is a left column (a bottom sheet on phones, handled below).
+    const dockRight = document.querySelector('.dock')?.getBoundingClientRect().right ?? 0;
+    const rankingLeft = document.querySelector('.ranking')?.getBoundingClientRect().left ?? vw;
     const w = card.offsetWidth;
     const h = card.offsetHeight;
 
@@ -201,14 +233,16 @@ export class CyberScanCardComponent {
     const container = map.getContainer().getBoundingClientRect();
     const x = p.x + container.left;
     const y = p.y + container.top;
-    const right = x + GAP + w <= vw - MARGIN;
-    const cardX = right ? x + GAP : Math.max(MARGIN, x - GAP - w);
+    const minX = dockRight + MARGIN;
+    const maxX = rankingLeft - MARGIN;
+    const right = x + GAP + w <= maxX;
+    const cardX = right ? x + GAP : Math.max(minX, x - GAP - w);
     const minY = headerBottom + MARGIN;
-    const maxY = Math.max(minY, dockTop - MARGIN - h);
+    const maxY = Math.max(minY, vh - MARGIN - h);
     const cardY = Math.min(maxY, Math.max(minY, y - 56));
 
     card.style.transform = `translate(${Math.round(cardX)}px, ${Math.round(cardY)}px)`;
-    const visible = x >= 0 && x <= vw && y >= headerBottom && y <= dockTop;
+    const visible = x >= dockRight && x <= rankingLeft && y >= headerBottom && y <= vh;
     pin.style.opacity = visible ? '1' : '0';
     pin.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
     leader.style.opacity = visible ? '1' : '0';

@@ -1,14 +1,16 @@
 @use "variables" as *;
 @use "base";
 
-// ─── Neon (CyberPunk) view palettes ──────────────────────────────────────────
+// ─── Styled map palettes (Neon, Sunset) ───────────────────────────────────────
 // Read by the map style builder through ThemeService.getTokenColor('cy-<palette>-<role>').
-// The neon view is always dark, so these tokens are the same in Light and Midnight.
+// Each palette keeps its own look, so these tokens are the same in Light and Midnight.
 
 $cyber-palettes: (
   // Red & cyan on near-black
   "neon": (
     "bg": #05080d,
+    "panel": #05080d,
+    "park": #0a1712,
     "road": #0e1820,
     "road-major": #17323d,
     "water": #062631,
@@ -24,27 +26,43 @@ $cyber-palettes: (
     "cycle": #d4ff2a,
     "stop": #fcee0a,
     "hover": #ffffff,
-    "select": #fcee0a
+    "select": #fcee0a,
+    // Routes: hot magenta, a hue no layer of this palette uses; drawn over a dark casing.
+    "route": #ff3df2,
+    // District ramp: dim indigo → electric violet (low values recede into the night).
+    "ramp-1": #1c1233,
+    "ramp-2": #36205f,
+    "ramp-3": #5e33a3,
+    "ramp-4": #9150f0
   ),
-  // Neon with the KMD orange accent
-  "kmd": (
-    "bg": #06090f,
-    "road": #111823,
-    "road-major": #1d2a3b,
-    "water": #08223a,
-    "waterway": #0f4462,
-    "outline": #d37400,
-    "res": #d37400,
-    "com": #3d8bff,
-    "ind": #9b6bff,
-    "pub": #2ee6a0,
-    "rel": #ffd166,
-    "oth": #56637a,
-    "tram": #00e5ff,
-    "cycle": #b6ff3b,
-    "stop": #ff9a1f,
-    "hover": #ffffff,
-    "select": #00e5ff
+  // Golden hour on the coast: peach light, turquoise lagoon, pastel façades (original palette, no game references).
+  "sunset": (
+    "bg": #fbe6d4,
+    "panel": #fff6ee,
+    "park": #d5e8bf,
+    "road": #f6d3bb,
+    "road-major": #efb79d,
+    "water": #8fd8d8,
+    "waterway": #4fbcc4,
+    "outline": #e45a86,
+    "res": #ef7aa1,
+    "com": #7b5fcb,
+    "ind": #ec8a4b,
+    "pub": #22aea3,
+    "rel": #eebc45,
+    "oth": #b29aa4,
+    "tram": #1497ad,
+    "cycle": #4fae5f,
+    "stop": #ff6f55,
+    "hover": #3b1f4e,
+    "select": #e3327a,
+    // Routes: electric indigo, darker than every pastel and the lagoon; drawn over a cream casing.
+    "route": #2f3fd8,
+    // District ramp: peach → coral → rose → plum, like the sky from horizon to dusk.
+    "ramp-1": #f6c9a8,
+    "ramp-2": #ef9a86,
+    "ramp-3": #d9608a,
+    "ramp-4": #963b7d
   )
 );
 
@@ -56,15 +74,48 @@ $cyber-palettes: (
   }
 }
 
+// ─── Palette glass: HUD panels on the styled maps (neon, sunset) ─────────────
+// The same look as the feature card (cyber-scan-card.component.scss): the panel redefines the colour tokens its
+// children read, so design-system sliders, switchers, buttons, search and legend pills follow the palette.
+// --neon-accent / --neon-hl / --neon-bg / --neon-ink are set on :root by AppComponent from --color-cy-<palette>-*.
+.glass-panel.palette-glass {
+  --color-text-bright: var(--neon-ink);
+  --color-text-main: color-mix(in srgb, var(--neon-ink) 88%, transparent);
+  --color-text-desc: color-mix(in srgb, var(--neon-ink) 70%, transparent);
+  --color-text-dim: color-mix(in srgb, var(--neon-ink) 55%, transparent);
+  --color-line: color-mix(in srgb, var(--neon-accent) 38%, transparent);
+  --color-line-strong: var(--neon-accent);
+  --color-panel-bg: color-mix(in srgb, var(--neon-bg) 90%, transparent);
+  --color-panel-bg-solid: var(--neon-bg);
+  --color-surface-muted: color-mix(in srgb, var(--neon-accent) 12%, transparent);
+  --color-surface-muted-strong: color-mix(in srgb, var(--neon-ink) 22%, transparent);
+  --color-accent: var(--neon-hl);
+  --color-accent-glow-soft: color-mix(in srgb, var(--neon-hl) 18%, transparent);
+  --color-switcher-active-bg: color-mix(in srgb, var(--neon-accent) 30%, var(--neon-bg));
+  --color-slider-thumb-bg: var(--neon-bg);
+  --color-btn-bg: color-mix(in srgb, var(--neon-ink) 6%, transparent);
+  --color-btn-hover: color-mix(in srgb, var(--neon-accent) 22%, transparent);
+  --color-shadow-panel: transparent;
+
+  color: var(--neon-ink);
+  // Gradient outline (palette accent → highlight) over tinted glass, soft coloured shadow, KMD panel radius.
+  border: 1px solid transparent;
+  background:
+    linear-gradient(color-mix(in srgb, var(--neon-bg) 92%, transparent), color-mix(in srgb, var(--neon-bg) 92%, transparent)) padding-box,
+    linear-gradient(135deg, var(--neon-accent), var(--neon-hl)) border-box;
+  box-shadow: 0 14px 44px color-mix(in srgb, var(--neon-accent) 24%, transparent);
+}
+
 // ─── MapLibre controls styled as KMD glass UI ────────────────────────────────
 
-// Keep the ODbL attribution clear of the bottom dock (the dock spans the full width on mobile).
+// The dock sits on the left; on phones it is a bottom sheet, so the ODbL attribution stays above it
+// (--hud-bottom is measured by AppComponent).
 .maplibregl-ctrl-bottom-right {
   right: var(--dock-offset-x);
   bottom: var(--dock-offset-bottom);
 
   @include respond-to("mobile") {
-    bottom: calc(var(--dock-offset-bottom) + 60px);
+    bottom: var(--hud-bottom, 72px);
   }
 }
 

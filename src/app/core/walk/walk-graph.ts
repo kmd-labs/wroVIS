@@ -33,12 +33,80 @@ export interface WalkGraph {
   placeX: Float64Array;
   placeY: Float64Array;
   placeCat: Uint8Array;
-  /** Vertex grid for snapping (cell → vertices). */
-  grid: Map<number, number[]>;
+  /** Kind of every edge (bike graph: 0 calm street, 1 cycle infrastructure, 2 busy street), or null when the file has none. */
+  edgeKind: Uint8Array | null;
+  /** Vertex grid for snapping (see `VertexGrid`). */
+  grid: VertexGrid;
 }
 
-const CELL = 0.002;
-const cellKey = (x: number, y: number) => Math.floor(x / CELL) * 100000 + Math.floor(y / CELL);
+/**
+ * Flat (CSR) grid of vertices for snapping points to the network: cells of 0.0005° (~35 m × 55 m), vertices of
+ * cell c are items[start[c] .. start[c+1]). Fine cells and a ring search outwards find the nearest vertex after
+ * a few cells; the former 0.002° Map grid scanned 25 big cells per lookup, which made marking thousands of
+ * buildings in a walking reach take ~170 ms.
+ */
+export interface VertexGrid {
+  x0: number;
+  y0: number;
+  w: number;
+  h: number;
+  start: Uint32Array;
+  items: Uint32Array;
+}
+
+const CELL = 0.0005;
+/** Shortest side of a cell in metres (longitude side at Wrocław's latitude), for ring-search stopping. */
+const CELL_MIN_M = CELL * 111320 * Math.cos((51.11 * Math.PI) / 180);
+
+function buildGrid(x: Float64Array, y: Float64Array): VertexGrid {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (let v = 0; v < x.length; v++) {
+    if (x[v] < minX) minX = x[v];
+    if (x[v] > maxX) maxX = x[v];
+    if (y[v] < minY) minY = y[v];
+    if (y[v] > maxY) maxY = y[v];
+  }
+  const x0 = Math.floor(minX / CELL), y0 = Math.floor(minY / CELL);
+  const w = Math.floor(maxX / CELL) - x0 + 1, h = Math.floor(maxY / CELL) - y0 + 1;
+  const cellOf = (v: number) => (Math.floor(y[v] / CELL) - y0) * w + (Math.floor(x[v] / CELL) - x0);
+  const start = new Uint32Array(w * h + 1);
+  for (let v = 0; v < x.length; v++) start[cellOf(v) + 1]++;
+  for (let c = 0; c < w * h; c++) start[c + 1] += start[c];
+  const fill = start.slice(0, w * h);
+  const items = new Uint32Array(x.length);
+  for (let v = 0; v < x.length; v++) items[fill[cellOf(v)]++] = v;
+  return { x0, y0, w, h, start, items };
+}
+
+/**
+ * Nearest vertex accepted by `accept`, searching rings of cells outwards from the point and stopping once no
+ * unvisited cell can hold anything closer; null when nothing within `maxMetres`.
+ */
+function nearestInGrid(g: WalkGraph, lon: number, lat: number, maxMetres: number, accept?: (v: number) => boolean): { v: number; d: number } | null {
+  const grid = g.grid;
+  const cx = Math.floor(lon / CELL) - grid.x0, cy = Math.floor(lat / CELL) - grid.y0;
+  const maxRing = Math.ceil(maxMetres / CELL_MIN_M) + 1;
+  let best = -1, bestD = Infinity;
+  for (let r = 0; r <= maxRing; r++) {
+    for (let j = cy - r; j <= cy + r; j++) {
+      if (j < 0 || j >= grid.h) continue;
+      const edge = j === cy - r || j === cy + r;
+      for (let i = cx - r; i <= cx + r; i += edge ? 1 : 2 * r || 1) {
+        if (i < 0 || i >= grid.w) continue;
+        const c = j * grid.w + i;
+        for (let k = grid.start[c]; k < grid.start[c + 1]; k++) {
+          const v = grid.items[k];
+          if (accept && !accept(v)) continue;
+          const d = metres(lon, lat, g.x[v], g.y[v]);
+          if (d < bestD) { bestD = d; best = v; }
+        }
+      }
+    }
+    // Every vertex in ring r+1 or further is at least r cells away.
+    if (best >= 0 && bestD <= r * CELL_MIN_M) break;
+  }
+  return best >= 0 && bestD <= maxMetres ? { v: best, d: bestD } : null;
+}
 
 export function decodeWalkGraph(buffer: ArrayBuffer): WalkGraph {
   let off = 0;
@@ -48,7 +116,7 @@ export function decodeWalkGraph(buffer: ArrayBuffer): WalkGraph {
   const u8 = (n: number) => { const a = new Uint8Array(buffer, off, n); off = align(off + n); return a; };
   const f64 = (n: number) => { const a = new Float64Array(buffer, off, n); off += n * 8; return a; };
 
-  const [magic, nNodes, nEdges, nPoints, nPlaces] = u32(8);
+  const [magic, nNodes, nEdges, nPoints, nPlaces, flags] = u32(8);
   if (magic !== WALK_MAGIC) throw new Error('walk graph: bad magic');
   const [minLon, minLat, maxLon, maxLat] = f64(4);
   const sx = (maxLon - minLon) / 65535;
@@ -100,6 +168,7 @@ export function decodeWalkGraph(buffer: ArrayBuffer): WalkGraph {
     placeY[i] = minLat + pqy[i] * sy;
   }
   const placeCat = u8(nPlaces).slice();
+  const edgeKind = flags & 1 ? u8(nEdges).slice() : null;
 
   // Undirected CSR adjacency.
   const degree = new Uint32Array(nNodes + 1);
@@ -114,15 +183,9 @@ export function decodeWalkGraph(buffer: ArrayBuffer): WalkGraph {
     adjTo[fill[b]] = a; adjEdge[fill[b]++] = e;
   }
 
-  const grid = new Map<number, number[]>();
-  for (let v = 0; v < nNodes; v++) {
-    const k = cellKey(x[v], y[v]);
-    const list = grid.get(k);
-    if (list) list.push(v);
-    else grid.set(k, [v]);
-  }
+  const grid = buildGrid(x, y);
 
-  return { x, y, adjStart, adjTo, adjEdge, edgeA, edgeB, edgeLen, geomStart, geomX, geomY, placeNode, placeX, placeY, placeCat, grid };
+  return { x, y, adjStart, adjTo, adjEdge, edgeA, edgeB, edgeLen, geomStart, geomX, geomY, placeNode, placeX, placeY, placeCat, edgeKind, grid };
 }
 
 const M_LAT = 110540;
@@ -131,17 +194,33 @@ const metres = (ax: number, ay: number, bx: number, by: number) => Math.hypot((b
 
 /** Nearest vertex to a point and its straight-line distance (m); null when nothing within ~400 m. */
 export function nearestVertex(g: WalkGraph, lon: number, lat: number): { v: number; d: number } | null {
-  let best = -1, bestD = Infinity;
-  const cx = Math.floor(lon / CELL), cy = Math.floor(lat / CELL);
-  for (let i = cx - 2; i <= cx + 2; i++) {
-    for (let j = cy - 2; j <= cy + 2; j++) {
-      for (const v of g.grid.get(i * 100000 + j) ?? []) {
-        const d = metres(lon, lat, g.x[v], g.y[v]);
-        if (d < bestD) { bestD = d; best = v; }
-      }
-    }
-  }
-  return best >= 0 && bestD <= 400 ? { v: best, d: bestD } : null;
+  return nearestInGrid(g, lon, lat, 400);
+}
+
+const sizeCache = new WeakMap<Int32Array, Uint32Array>();
+
+/** Number of vertices of each connected component (memoised per component array). */
+export function componentSizes(comp: Int32Array): Uint32Array {
+  const cached = sizeCache.get(comp);
+  if (cached) return cached;
+  let max = -1;
+  for (let i = 0; i < comp.length; i++) if (comp[i] > max) max = comp[i];
+  const sizes = new Uint32Array(max + 1);
+  for (let i = 0; i < comp.length; i++) sizes[comp[i]]++;
+  sizeCache.set(comp, sizes);
+  return sizes;
+}
+
+/** Components smaller than this are stray fragments (courtyards, footpaths not joined to the street network in OSM). */
+const MIN_NETWORK_VERTICES = 200;
+
+/**
+ * Nearest vertex of the street network proper: fragments that OSM leaves unconnected (a footway inside a
+ * courtyard, a path around a building) would trap a walking reach in a few metres, so they are skipped
+ * whenever a vertex of a large component lies within ~400 m; otherwise the plain nearest vertex is used.
+ */
+export function nearestNetworkVertex(g: WalkGraph, comp: Int32Array, sizes: Uint32Array, lon: number, lat: number): { v: number; d: number } | null {
+  return nearestInGrid(g, lon, lat, 400, v => sizes[comp[v]] >= MIN_NETWORK_VERTICES) ?? nearestVertex(g, lon, lat);
 }
 
 /** Walking distance (m) from `source` to every vertex, explored up to `maxMetres`; unreached = Infinity. */
@@ -270,16 +349,51 @@ function edgeCoords(g: WalkGraph, e: number, from: number): [number, number][] {
   return [[g.x[from], g.y[from]], ...pts, [g.x[to], g.y[to]]];
 }
 
+/** Per-graph A* buffers, reused between searches; `stamp` / `closedStamp` mark the vertices of search `gen`. */
+interface Scratch {
+  gen: number;
+  cost: Float64Array;
+  prevEdge: Int32Array;
+  prevVertex: Int32Array;
+  stamp: Uint32Array;
+  closedStamp: Uint32Array;
+}
+
+const scratchCache = new WeakMap<WalkGraph, Scratch>();
+
+function scratchFor(g: WalkGraph): Scratch {
+  let sc = scratchCache.get(g);
+  if (!sc) {
+    const n = g.x.length;
+    sc = { gen: 0, cost: new Float64Array(n), prevEdge: new Int32Array(n), prevVertex: new Int32Array(n), stamp: new Uint32Array(n), closedStamp: new Uint32Array(n) };
+    scratchCache.set(g, sc);
+  }
+  return sc;
+}
+
+/** Route along the network: true length, the geometry, and the same geometry split into runs of one edge kind. */
+export interface PathResult {
+  metres: number;
+  coords: [number, number][];
+  /** Consecutive edges of the same kind joined into one polyline (one part when the graph has no kinds). */
+  parts: { kind: number; coords: [number, number][]; metres: number }[];
+}
+
 /**
- * Shortest path between two vertices along the network (Dijkstra stopping at the target).
- * Returns its length in metres and its geometry, or null when the vertices are not connected.
+ * Shortest path between two vertices along the network (A* with the straight-line distance as heuristic).
+ * `costByKind` multiplies the length of an edge of each kind (all ≥ 1, so the heuristic stays admissible):
+ * the bike graph prefers cycle infrastructure over streets this way. Null when the vertices are not connected.
  */
-export function shortestPath(g: WalkGraph, source: number, target: number): { metres: number; coords: [number, number][] } | null {
-  if (source === target) return { metres: 0, coords: [[g.x[source], g.y[source]]] };
-  const n = g.x.length;
-  const dist = new Float64Array(n).fill(Infinity);
-  const prevEdge = new Int32Array(n).fill(-1);
-  const prevVertex = new Int32Array(n).fill(-1);
+export function shortestPath(g: WalkGraph, source: number, target: number, costByKind?: readonly number[]): PathResult | null {
+  if (source === target) return { metres: 0, coords: [[g.x[source], g.y[source]]], parts: [] };
+  // Buffers are reused between calls and reset lazily: a vertex counts as unvisited unless stamped this search.
+  const sc = scratchFor(g);
+  const gen = ++sc.gen;
+  const { cost, prevEdge, prevVertex, stamp, closedStamp } = sc;
+  const seen = (v: number) => stamp[v] === gen;
+  const tx = g.x[target], ty = g.y[target];
+  const h = (v: number) => metres(g.x[v], g.y[v], tx, ty) * 0.999;
+  const kinds = costByKind && g.edgeKind ? g.edgeKind : null;
   const hd: number[] = [], hv: number[] = [];
   const push = (d: number, v: number) => {
     let i = hd.length;
@@ -310,34 +424,52 @@ export function shortestPath(g: WalkGraph, source: number, target: number): { me
     }
     return [d0, v0];
   };
-  dist[source] = 0;
-  push(0, source);
+  stamp[source] = gen;
+  cost[source] = 0;
+  prevVertex[source] = -1;
+  push(h(source), source);
   while (hd.length) {
-    const [d, v] = pop();
-    if (d > dist[v]) continue;
+    const [, v] = pop();
+    if (closedStamp[v] === gen) continue;
+    closedStamp[v] = gen;
     if (v === target) break;
+    const d = cost[v];
     for (let k = g.adjStart[v]; k < g.adjStart[v + 1]; k++) {
       const e = g.adjEdge[k], to = g.adjTo[k];
-      const nd = d + g.edgeLen[e];
-      if (nd < dist[to]) {
-        dist[to] = nd;
+      if (closedStamp[to] === gen) continue;
+      const nd = d + g.edgeLen[e] * (kinds ? costByKind![kinds[e]] ?? 1 : 1);
+      if (!seen(to) || nd < cost[to]) {
+        stamp[to] = gen;
+        cost[to] = nd;
         prevEdge[to] = e;
         prevVertex[to] = v;
-        push(nd, to);
+        push(nd + h(to), to);
       }
     }
   }
-  if (!(dist[target] < Infinity)) return null;
+  if (!seen(target)) return null;
   // Walk back from the target, then emit the edges in travel order.
   const chain: [number, number][] = [];
   for (let v = target; v !== source; v = prevVertex[v]) chain.push([prevEdge[v], prevVertex[v]]);
   chain.reverse();
   const coords: [number, number][] = [];
+  const parts: PathResult['parts'] = [];
+  let total = 0;
   for (const [e, from] of chain) {
     const part = edgeCoords(g, e, from);
     coords.push(...(coords.length ? part.slice(1) : part));
+    const kind = g.edgeKind ? g.edgeKind[e] : 0;
+    const len = g.edgeLen[e];
+    total += len;
+    const last = parts[parts.length - 1];
+    if (last && last.kind === kind) {
+      last.coords.push(...part.slice(1));
+      last.metres += len;
+    } else {
+      parts.push({ kind, coords: part, metres: len });
+    }
   }
-  return { metres: dist[target], coords };
+  return { metres: total, coords, parts };
 }
 
 /** Connected component id of every vertex (computed once per graph). */
@@ -368,10 +500,14 @@ export function components(g: WalkGraph): Int32Array {
 /** Nearest vertex of each component within `maxMetres` of a point. */
 function nearestByComponent(g: WalkGraph, comp: Int32Array, lon: number, lat: number, maxMetres: number): Map<number, { v: number; d: number }> {
   const out = new Map<number, { v: number; d: number }>();
-  const cx = Math.floor(lon / CELL), cy = Math.floor(lat / CELL);
-  for (let i = cx - 2; i <= cx + 2; i++) {
-    for (let j = cy - 2; j <= cy + 2; j++) {
-      for (const v of g.grid.get(i * 100000 + j) ?? []) {
+  const grid = g.grid;
+  const cx = Math.floor(lon / CELL) - grid.x0, cy = Math.floor(lat / CELL) - grid.y0;
+  const rx = Math.ceil(maxMetres / CELL_MIN_M), ry = Math.ceil(maxMetres / (CELL * M_LAT));
+  for (let j = Math.max(0, cy - ry); j <= Math.min(grid.h - 1, cy + ry); j++) {
+    for (let i = Math.max(0, cx - rx); i <= Math.min(grid.w - 1, cx + rx); i++) {
+      const c = j * grid.w + i;
+      for (let k = grid.start[c]; k < grid.start[c + 1]; k++) {
+        const v = grid.items[k];
         const d = metres(lon, lat, g.x[v], g.y[v]);
         if (d > maxMetres) continue;
         const best = out.get(comp[v]);
@@ -386,6 +522,8 @@ export interface Leg {
   /** Metres along the network, or null when the two points share no connected piece of it. */
   metres: number | null;
   coords: [number, number][];
+  /** The route split by edge kind (see `PathResult.parts`); empty when there is no route. */
+  parts: PathResult['parts'];
   /** Snapped start and end on the network (for drawing the short approach from each clicked point). */
   from: [number, number] | null;
   to: [number, number] | null;
@@ -396,7 +534,7 @@ export interface Leg {
  * the network (connected component) they are both close to, choosing the one with the shortest approaches,
  * so a point next to an isolated stub still routes along the main network nearby.
  */
-export function routeLeg(g: WalkGraph, comp: Int32Array, a: [number, number], b: [number, number], snapMetres = 400): Leg {
+export function routeLeg(g: WalkGraph, comp: Int32Array, a: [number, number], b: [number, number], costByKind?: readonly number[], snapMetres = 400): Leg {
   const na = nearestByComponent(g, comp, a[0], a[1], snapMetres);
   const nb = nearestByComponent(g, comp, b[0], b[1], snapMetres);
   let best: { va: number; vb: number; cost: number } | null = null;
@@ -404,8 +542,22 @@ export function routeLeg(g: WalkGraph, comp: Int32Array, a: [number, number], b:
     const pb = nb.get(c);
     if (pb && (!best || pa.d + pb.d < best.cost)) best = { va: pa.v, vb: pb.v, cost: pa.d + pb.d };
   }
-  if (!best) return { metres: null, coords: [a, b], from: null, to: null };
-  const path = shortestPath(g, best.va, best.vb);
-  if (!path) return { metres: null, coords: [a, b], from: null, to: null };
-  return { metres: path.metres, coords: path.coords, from: [g.x[best.va], g.y[best.va]], to: [g.x[best.vb], g.y[best.vb]] };
+  // Two points next to the same stray fragment would otherwise "route" inside it; prefer the network proper
+  // when it is reachable from both within the snap distance and costs at most 150 m more of approach.
+  if (best) {
+    const sizes = componentSizes(comp);
+    if (sizes[comp[best.va]] < MIN_NETWORK_VERTICES) {
+      for (const [c, pa] of na) {
+        const pb = nb.get(c);
+        if (pb && sizes[c] >= MIN_NETWORK_VERTICES && pa.d + pb.d <= best.cost + 150) {
+          best = { va: pa.v, vb: pb.v, cost: pa.d + pb.d };
+          break;
+        }
+      }
+    }
+  }
+  if (!best) return { metres: null, coords: [a, b], parts: [], from: null, to: null };
+  const path = shortestPath(g, best.va, best.vb, costByKind);
+  if (!path) return { metres: null, coords: [a, b], parts: [], from: null, to: null };
+  return { metres: path.metres, coords: path.coords, parts: path.parts, from: [g.x[best.va], g.y[best.va]], to: [g.x[best.vb], g.y[best.vb]] };
 }

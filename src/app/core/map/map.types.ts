@@ -2,17 +2,40 @@ import type { ThemeMode } from '@kmd/design-system';
 import type { Lang } from '../i18n/i18n.types';
 import type { CityStats } from '../data/stats.model';
 
-/** Primary visualization modes, switched from the top-right view pill. */
-export type ViewId = 'buildings' | 'bridges' | 'transit' | 'districts' | 'cyberpunk';
+/**
+ * Thematic layer groups of the single 3D map, switched on and off in the left dock.
+ * The former views (3D buildings, bridges, transport, districts) are now layers drawn together.
+ */
+export type LayerId = 'buildings' | 'trams' | 'stopRadius' | 'cycleways' | 'bridges' | 'districts';
 
-export const VIEW_IDS: readonly ViewId[] = ['buildings', 'bridges', 'transit', 'districts', 'cyberpunk'];
+/** Dock order of the layer groups (also their draw order inside each slot). */
+export const LAYER_IDS: readonly LayerId[] = ['buildings', 'trams', 'stopRadius', 'cycleways', 'bridges', 'districts'];
 
-/** Colour sets of the neon (CyberPunk) view: red & cyan on black, or neon with the KMD orange accent. */
-export type CyberPalette = 'neon' | 'kmd';
+/** Layers switched on at the first visit. */
+export const DEFAULT_LAYERS: readonly LayerId[] = ['buildings'];
 
-export const CYBER_PALETTES: readonly CyberPalette[] = ['neon', 'kmd'];
+/** Map palette, switched from the header pill: the regular KMD map, the neon night map or the golden-hour "Sunset" map. */
+export type Palette = 'normal' | 'neon' | 'sunset';
 
-/** Choropleth metrics of the districts view (numeric keys of `DistrictStats`). */
+export const PALETTES: readonly Palette[] = ['normal', 'neon', 'sunset'];
+
+/** What a click on the map does: inspect features, the "15-minute city" tools, or the bike route planner. */
+export type Tool = 'explore' | 'walk' | 'bike';
+
+export const TOOLS: readonly Tool[] = ['explore', 'walk', 'bike'];
+
+/** "15-minute city" sub-mode: walking reach from a point, or the shortest walking route between points. */
+export type WalkMode = 'reach' | 'route';
+
+/** Bike routing: via streets (with a preference for cycle infrastructure) or strictly along cycleways. */
+export type BikeMode = 'streets' | 'cycleways';
+
+export const BIKE_MODES: readonly BikeMode[] = ['streets', 'cycleways'];
+
+/** Network the route planner runs on: the pedestrian graph, or one of the two bike graphs. */
+export type RouteProfile = 'walk' | 'bikeStreets' | 'bikeCycleways';
+
+/** Choropleth metrics of the districts layer (numeric keys of `DistrictStats`). */
 export type DistrictMetric =
   | 'buildings_per_km2'
   | 'buildings'
@@ -51,32 +74,21 @@ export const METRIC_FORMAT: Record<DistrictMetric, { unit: '' | '%' | 'km' | 'km
   slow_street_pct: { unit: '%', digits: 1 }
 };
 
-/** End of the bridge length slider: "all bridges", including the few longer than this. */
-export const BRIDGE_ALL_M = 400;
-
-/** Per-view parameters driven by the bottom dock. */
-export interface ViewParams {
-  /** Maximum bridge length in metres; at BRIDGE_ALL_M (the end of the slider) every bridge is shown. */
-  bridgesMaxLength: number;
+/** Parameters driven by the dock sliders and selectors. */
+export interface MapParams {
   /** Walking radius around tram stops in metres. */
   transitRadius: number;
   /** Districts at or above this metric value are highlighted. */
   districtsThreshold: number;
   districtsMetric: DistrictMetric;
-  /** Minimum number of storeys a building needs to stay visible in the neon view. */
-  cyberMinLevels: number;
-  cyberPalette: CyberPalette;
-  /** Walking time limit of the reach shown in the 3D buildings view, minutes. */
+  /** Walking time limit of the "15-minute city" reach, minutes. */
   walkMinutes: number;
 }
 
-export const DEFAULT_VIEW_PARAMS: ViewParams = {
-  bridgesMaxLength: BRIDGE_ALL_M,
+export const DEFAULT_PARAMS: MapParams = {
   transitRadius: 400,
   districtsThreshold: 0,
   districtsMetric: 'buildings_per_km2',
-  cyberMinLevels: 0,
-  cyberPalette: 'neon',
   walkMinutes: 15
 };
 
@@ -84,25 +96,25 @@ export const DEFAULT_VIEW_PARAMS: ViewParams = {
 export interface StyleContext {
   mode: ThemeMode;
   lang: Lang;
-  view: ViewId;
-  params: ViewParams;
+  palette: Palette;
+  /** Layer groups switched on in the dock. */
+  layers: ReadonlySet<LayerId>;
+  tool: Tool;
+  walkMode: WalkMode;
+  params: MapParams;
   stats: CityStats | null;
-  /** Legend entries switched off by the user, as `view:labelKey`. */
+  /** Legend entries switched off by the user, as `group:labelKey`. */
   hidden: ReadonlySet<string>;
-  /** Walking reach switched on in the 3D buildings view. */
-  walkEnabled: boolean;
-  /** A reach is shown (enabled and a point clicked): buildings outside it are greyed out. */
+  /** A walking reach is shown (reach tool and a point clicked): buildings outside it are greyed out. */
   walkActive: boolean;
-  /** Transport view mode: tram stop walking radius, or the bike route planner. */
-  transitMode: TransitMode;
+  /** Street picked in the address search (OSM name), highlighted on the map; null when none. */
+  searchStreet: string | null;
 }
 
-export type TransitMode = 'radius' | 'bike';
+/** Numeric parameters a dock slider can drive. */
+export type SliderParam = Exclude<keyof MapParams, 'districtsMetric'>;
 
-/** Numeric dock parameters (the slider never drives the metric or palette selectors). */
-export type SliderParam = Exclude<keyof ViewParams, 'districtsMetric' | 'cyberPalette'>;
-
-/** Declarative description of the dock slider of a view. */
+/** Declarative description of a dock slider. */
 export interface SliderSpec {
   param: SliderParam;
   min: number;
@@ -110,8 +122,11 @@ export interface SliderSpec {
   step: number;
   presets: number[];
   /** Unit of the readout, resolved to an i18n label by the dock. */
-  unit: 'levels' | 'meters' | 'minutes' | 'none';
+  unit: 'meters' | 'minutes' | 'none';
 }
+
+/** Namespace of legend entries: a layer group, or the walking reach / route of the tools. */
+export type LegendGroup = LayerId | 'walk' | 'route';
 
 export type LegendLabelKey =
   | 'bldResidential'
@@ -139,7 +154,9 @@ export type LegendLabelKey =
   | 'wkOrigin'
   | 'wkOutside'
   | 'bkRoute'
-  | 'bkPoint';
+  | 'bkStreet'
+  | 'bkPoint'
+  | 'wrRoute';
 
 export interface LegendCategory {
   /** i18n key of the label. */
@@ -155,7 +172,7 @@ export type LegendSpec =
   | { kind: 'categorical'; items: LegendCategory[]; /** Two-column layout for long legends. */ wide?: boolean }
   | { kind: 'ordinal'; tokens: string[]; low: number; high: number; metric: DistrictMetric };
 
-/** Camera preset applied with `easeTo` when a view is entered. */
+/** Camera preset of the single map. */
 export interface CameraSpec {
   center: [number, number];
   zoom: number;
@@ -165,7 +182,7 @@ export interface CameraSpec {
 
 /** A thematic feature under the pointer or clicked by the user. */
 export interface PickedFeature {
-  /** Registry layer id the feature was rendered by. */
+  /** Style layer id the feature was rendered by. */
   layerId: string;
   /** MapLibre source id and (for vector sources) source-layer, needed for `feature-state`. */
   source: string;

@@ -1,9 +1,9 @@
 @use "variables" as *;
 
-// Feature card of the Neon View ("neon glass"): rounded dark glass with a gradient outline from the feature's
+// Feature card on the neon map ("neon glass"): rounded dark glass with a gradient outline from the feature's
 // category colour (--scan-accent) to the palette highlight (--scan-hl), and a soft coloured shadow.
-// --scan-bg / --scan-ink come from the active neon palette (--color-cy-*). The .scan--kmd variant below is
-// the 3D buildings view card in the regular KMD theme.
+// --scan-bg / --scan-ink come from the neon palette (--color-cy-neon-*). The .scan--kmd variant below is
+// the card on the regular map in the KMD theme.
 
 .scan {
   position: fixed;
@@ -23,21 +23,21 @@
   line {
     stroke: var(--scan-accent);
     stroke-width: 1;
-    stroke-dasharray: 4 3;
-    opacity: 0.85;
+    stroke-dasharray: 3 3;
+    opacity: 0.6;
   }
 }
 
+// Small, quiet pin: a dot in the category colour with a thin halo.
 .scan__pin {
   position: absolute;
-  left: -5px;
-  top: -5px;
-  width: 10px;
-  height: 10px;
+  left: -3.5px;
+  top: -3.5px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: var(--scan-ink);
-  border: 2px solid var(--scan-accent);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--scan-accent) 25%, transparent);
+  background: var(--scan-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--scan-bg) 80%, transparent), 0 0 0 5px color-mix(in srgb, var(--scan-accent) 14%, transparent);
 }
 
 .scan__card {
@@ -96,12 +96,21 @@
 
   .scan__sub,
   .scan__row dt,
-  .scan__note {
+  .scan__note,
+  .scan__place-cat,
+  .scan__place-tag,
+  .scan__places-title {
     color: color("text-dim");
   }
 
-  .scan__rows {
+  .scan__rows,
+  .scan__places {
     border-top-color: color("line");
+  }
+
+  .scan__places-count {
+    background: color("surface-muted");
+    color: color("text-desc");
   }
 
   .scan__close {
@@ -260,4 +269,74 @@
       outline-offset: 2px;
     }
   }
+}
+
+// ─── Places inside a building ────────────────────────────────────────────────
+
+.scan__places {
+  margin: 10px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--scan-ink) 14%, transparent);
+}
+
+.scan__places-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+  font-size: font-size("xxs");
+  font-weight: font-weight("semibold");
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--scan-ink) 58%, transparent);
+}
+
+.scan__places-count {
+  padding: 0 6px;
+  border-radius: radius("pill");
+  background: color-mix(in srgb, var(--scan-accent) 18%, transparent);
+  font-family: var(--font-family-mono);
+  letter-spacing: 0;
+  color: var(--scan-ink);
+}
+
+.scan__place-group + .scan__place-group {
+  margin-top: 6px;
+}
+
+.scan__place-cat {
+  display: block;
+  font-size: font-size("xxs");
+  font-weight: font-weight("semibold");
+  color: color-mix(in srgb, var(--scan-ink) 58%, transparent);
+}
+
+.scan__place-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+
+  li {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+    font-size: font-size("xs");
+  }
+}
+
+.scan__place-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.scan__place-tag {
+  flex: none;
+  font-family: var(--font-family-mono);
+  font-size: font-size("xxs");
+  color: color-mix(in srgb, var(--scan-ink) 55%, transparent);
 }

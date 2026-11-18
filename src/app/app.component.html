@@ -3,13 +3,13 @@
 <main class="viewport">
   <app-splash></app-splash>
 
-  <!-- Fullscreen Visualization Stage: MapLibre canvas -->
+  <!-- Fullscreen Visualization Stage: one 3D MapLibre map, thematic layers switched in the dock -->
   <app-map-stage class="stage" role="region" [attr.aria-label]="t.stageAriaLabel"></app-map-stage>
   <app-map-tooltip></app-map-tooltip>
   <app-cyber-scan-card></app-cyber-scan-card>
   <app-district-ranking></app-district-ranking>
 
-  <!-- Top HUD: Left Logotype + Language, Right View Switcher -->
+  <!-- Top HUD: brand, language and the map palette (Normal / Neon) -->
   <header class="header" #header [class.header--popup-open]="isPopupOpen()">
     <div class="header__left">
       <app-brand
@@ -28,115 +28,93 @@
           (valueChange)="i18n.setLang($event)">
         </app-dropdown>
       </div>
-    </div>
 
-    <div class="header__right">
-      <div class="header__view glass-panel">
-        <app-dropdown
+      <div class="header__palette glass-panel">
+        <app-switcher
+          size="sm"
           variant="ghost"
-          align="right"
-          [fullWidth]="true"
-          [options]="viewOptions()"
-          [value]="state.currentView()"
-          [icon]="currentViewIcon()"
-          [ariaLabel]="t.chooseView"
-          (valueChange)="state.setView($event)">
-        </app-dropdown>
+          [options]="paletteOptions()"
+          [value]="state.palette()"
+          [ariaLabel]="t.palette"
+          (valueChange)="onPalette($event)">
+        </app-switcher>
       </div>
     </div>
   </header>
 
-  <!-- Bottom Dock: view context, parameter slider with presets, legend and glossary -->
-  <footer class="dock-wrap">
-    <div
-      class="dock glass-panel"
-      #dock
-      [class.dock--neon]="neonDock()"
-      [style.--neon-accent]="neonDock() ? cyberVar('outline') : null"
-      [style.--neon-hl]="neonDock() ? cyberVar('select') : null"
-      [style.--neon-bg]="neonDock() ? cyberVar('bg') : null"
-      [style.--neon-ink]="neonDock() ? cyberVar('hover') : null">
-      <div class="dock__main">
-        <div class="dock__head">
-          <lucide-icon class="dock__icon" [img]="currentViewIcon()" [size]="16"></lucide-icon>
-          <div class="dock__titles">
-            <span class="dock__title">{{ viewTitle() }}</span>
-            <span class="dock__desc">{{ viewDesc() }}</span>
-          </div>
-          @if (isBuildings()) {
-            <app-toggle
-              class="dock__switcher"
-              size="sm"
-              [label]="t.walkToggle"
-              [ariaLabel]="t.walkToggle"
-              [tooltipText]="t.walkToggleHint"
-              [checked]="state.walkEnabled()"
-              (checkedChange)="state.setWalkEnabled($event)">
-            </app-toggle>
-          }
-          @if (!showSlider()) {
-            <!-- Without the slider its glossary button would be gone, so it sits in the head instead. -->
-            <app-button variant="ghost" [iconOnly]="true" [ariaLabel]="t.glossary" [titleText]="t.glossary" (btnClick)="openGlossary()">
-              <lucide-icon [img]="bookOpenIcon" [size]="15"></lucide-icon>
-            </app-button>
-          }
-          @if (state.currentView() === 'transit') {
-            <app-switcher
-              class="dock__switcher"
-              size="sm"
-              [options]="transitModeOptions()"
-              [value]="state.transitMode()"
-              [ariaLabel]="t.transitModeLabel"
-              (valueChange)="onTransitMode($event)">
-            </app-switcher>
-          }
-          @if (state.currentView() === 'cyberpunk') {
-            <app-switcher
-              class="dock__switcher"
-              size="sm"
-              [options]="paletteOptions()"
-              [value]="state.params().cyberPalette"
-              [ariaLabel]="t.palette"
-              (valueChange)="onPaletteChange($event)">
-            </app-switcher>
-          }
-          @if (state.currentView() === 'districts') {
-            @if (bp.mobile()) {
-              <app-button
-                variant="ghost"
-                [iconOnly]="true"
-                [ariaLabel]="t.rankingTitle"
-                [titleText]="t.rankingButton"
-                (btnClick)="state.rankingSheetOpen.set(true)">
-                <lucide-icon [img]="rankingIcon" [size]="16"></lucide-icon>
-              </app-button>
-            }
-            <div class="dock__switcher">
-              <app-dropdown
-                variant="ghost"
-                align="right"
-                direction="up"
-                [options]="metricOptions()"
-                [value]="state.params().districtsMetric"
-                [ariaLabel]="t.chooseMetric"
-                (valueChange)="onMetricChange($event)">
-              </app-dropdown>
-            </div>
-          }
-        </div>
+  <!-- Left Dock: address search, tool, layers with their sliders and legends, glossary -->
+  <aside
+    class="dock glass-panel"
+    #dock
+    [attr.aria-label]="t.dockLabel"
+    [class.palette-glass]="neonDock()"
+    [class.dock--folded]="bp.mobile() && !dockOpen()">
+    <div class="dock__top">
+      <app-address-search class="dock__search" (picked)="onAddress($event)" (streetPicked)="onStreet($event)" (cleared)="onSearchCleared()"></app-address-search>
+      @if (bp.mobile()) {
+        <app-button
+          variant="ghost"
+          [iconOnly]="true"
+          [ariaLabel]="dockOpen() ? t.dockCollapse : t.dockExpand"
+          [titleText]="dockOpen() ? t.dockCollapse : t.dockExpand"
+          (btnClick)="dockOpen.set(!dockOpen())">
+          <lucide-icon class="dock__fold" [class.dock__fold--closed]="!dockOpen()" [img]="chevronIcon" [size]="16"></lucide-icon>
+        </app-button>
+      }
+    </div>
 
-        @if (isWalk()) {
+    <div class="dock__scroll">
+      <!-- Tool: what a click on the map does -->
+      <section class="dock__section" [attr.aria-label]="t.toolLabel">
+        <app-switcher
+          size="sm"
+          [fullWidth]="true"
+          [options]="toolOptions()"
+          [value]="state.tool()"
+          [ariaLabel]="t.toolLabel"
+          (valueChange)="onTool($event)">
+        </app-switcher>
+
+        @switch (state.tool()) {
+          @case ('explore') {
+            <p class="dock__note">{{ t.exploreHint }}</p>
+          }
+          @case ('walk') {
+            <app-switcher
+              size="sm"
+              variant="ghost"
+              [fullWidth]="true"
+              [options]="walkModeOptions()"
+              [value]="state.walkMode()"
+              [ariaLabel]="t.walkModeLabel"
+              (valueChange)="onWalkMode($event)">
+            </app-switcher>
+          }
+          @case ('bike') {
+            <app-switcher
+              size="sm"
+              variant="ghost"
+              [fullWidth]="true"
+              [options]="bikeModeOptions()"
+              [value]="state.bikeMode()"
+              [ariaLabel]="t.bikeModeLabel"
+              (valueChange)="onBikeMode($event)">
+            </app-switcher>
+          }
+        }
+
+        @if (isWalkReach()) {
           <div class="dock__walk" aria-live="polite">
             @switch (walk.status()) {
               @case ('loading') {
-                <p class="dock__walk-note">{{ t.walkLoading }}</p>
+                <p class="dock__note">{{ t.walkLoading }}</p>
               }
               @case ('error') {
-                <p class="dock__walk-note">{{ t.walkError }}</p>
+                <p class="dock__note">{{ t.walkError }}</p>
               }
               @default {
                 @if (walk.outside()) {
-                  <p class="dock__walk-note">{{ t.walkOutside }}</p>
+                  <p class="dock__note">{{ t.walkOutside }}</p>
                 } @else if (walkStats(); as stats) {
                   <ul class="dock__walk-grid">
                     @for (s of stats; track s.cat) {
@@ -148,92 +126,164 @@
                     }
                   </ul>
                 } @else {
-                  <p class="dock__walk-note">{{ t.walkHint }}</p>
+                  <p class="dock__note">{{ t.walkHint }}</p>
                 }
               }
             }
           </div>
+          <ng-container *ngTemplateOutlet="sliderTpl; context: { $implicit: walkSlider() }"></ng-container>
+          <app-legend group="walk" [spec]="walkLegendSpec()"></app-legend>
         }
 
-        @if (isBikeMode()) {
-          <div class="dock__bike" aria-live="polite">
-            @switch (bike.status()) {
+        @if (isRoute()) {
+          <div class="dock__route" aria-live="polite">
+            @switch (route.status()) {
               @case ('loading') {
-                <p class="dock__walk-note">{{ t.bikeLoading }}</p>
+                <p class="dock__note">{{ routeLoadingLabel() }}</p>
               }
               @case ('error') {
-                <p class="dock__walk-note">{{ t.bikeError }}</p>
+                <p class="dock__note">{{ t.routeError }}</p>
               }
               @default {
-                @if (state.bikePoints().length === 0) {
-                  <p class="dock__walk-note">{{ t.bikeHint }}</p>
+                @if (state.routePoints().length === 0) {
+                  <p class="dock__note">{{ routeHint() }}</p>
                 } @else {
-                  <div class="dock__bike-row">
-                    <div class="dock__bike-total">
-                      <span class="dock__bike-km">{{ bikeTotal() }}</span>
-                      <span class="dock__walk-near">{{ t.bikeTotal }}</span>
-                    </div>
-                    <ul class="dock__bike-legs">
-                      @for (leg of bikeLegs(); track $index) {
-                        <li [class.dock__bike-leg--broken]="leg.broken">
-                          <span class="dock__bike-leg-name">{{ leg.label }}</span>
-                          <span class="dock__bike-leg-km">{{ leg.value }}</span>
-                        </li>
-                      } @empty {
-                        <li class="dock__walk-near">{{ t.bikeAddMore }}</li>
+                  <div class="dock__route-head">
+                    <div class="dock__route-total">
+                      <span class="dock__route-km">{{ routeTotal().km }}</span>
+                      <span class="dock__route-caption">{{ routeTotal().caption }} · {{ routeTotal().time }}</span>
+                      @if (routeTotal().split; as split) {
+                        <span class="dock__route-caption">{{ split }}</span>
                       }
-                    </ul>
-                    <div class="dock__bike-actions">
-                      <app-button variant="ghost" [iconOnly]="true" [ariaLabel]="t.bikeUndo" [titleText]="t.bikeUndo" (btnClick)="bike.undo()">
+                    </div>
+                    <div class="dock__route-actions">
+                      <app-button variant="ghost" [iconOnly]="true" [ariaLabel]="t.routeUndo" [titleText]="t.routeUndo" (btnClick)="route.undo()">
                         <lucide-icon [img]="undoIcon" [size]="15"></lucide-icon>
                       </app-button>
-                      <app-button variant="ghost" [iconOnly]="true" [ariaLabel]="t.bikeClear" [titleText]="t.bikeClear" (btnClick)="bike.clear()">
+                      <app-button variant="ghost" [iconOnly]="true" [ariaLabel]="t.routeClear" [titleText]="t.routeClear" (btnClick)="route.clear()">
                         <lucide-icon [img]="clearIcon" [size]="15"></lucide-icon>
                       </app-button>
                     </div>
                   </div>
+                  <ul class="dock__route-legs">
+                    @for (leg of routeLegs(); track $index) {
+                      <li [class.dock__route-leg--broken]="leg.broken">
+                        <span class="dock__route-leg-name">{{ leg.label }}</span>
+                        <span class="dock__route-leg-km">{{ leg.value }}</span>
+                      </li>
+                    } @empty {
+                      <li class="dock__route-caption">{{ t.bikeAddMore }}</li>
+                    }
+                  </ul>
                 }
               }
             }
           </div>
+          @if (routeLegendSpec(); as spec) {
+            <app-legend group="route" [spec]="spec"></app-legend>
+          }
         }
+      </section>
 
-        @if (showSlider()) {
-        <div class="dock__slider">
-          <div class="dock__slider-head">
-            <span class="dock__slider-label">{{ sliderLabel() }}</span>
-            <span class="dock__value">{{ sliderReadout() }}</span>
-          </div>
-          <app-timeline-slider
-            [min]="slider().min"
-            [max]="slider().max"
-            [step]="slider().step"
-            [value]="sliderValue()"
-            [markers]="sliderMarkers()"
-            [trackGradient]="sliderRail"
-            [ariaLabel]="sliderLabel()"
-            (valueChange)="onSliderChange($event)"
-            (markerClick)="onMarkerClick($event)">
-            <app-button
-              timelineAction
-              variant="ghost"
-              [iconOnly]="true"
-              [ariaLabel]="t.glossary"
-              [titleText]="t.glossary"
-              (btnClick)="openGlossary()">
-              <lucide-icon [img]="bookOpenIcon" [size]="15"></lucide-icon>
-            </app-button>
-          </app-timeline-slider>
-        </div>
-        }
-      </div>
+      <!-- Layers: each row switches a layer; while on, its slider and legend open under it -->
+      <section class="dock__section dock__layers" [attr.aria-label]="t.layersTitle">
+        <h2 class="dock__heading">{{ t.layersTitle }}</h2>
+        <ul class="dock__layer-list">
+          @for (row of layerRows(); track row.id) {
+            <li class="dock__layer" [class.dock__layer--on]="row.on">
+              <div class="dock__layer-head">
+                <lucide-icon class="dock__layer-icon" [img]="groupIcon(row.id)" [size]="15" aria-hidden="true"></lucide-icon>
+                <app-toggle
+                  class="dock__layer-toggle"
+                  size="sm"
+                  [fullWidth]="true"
+                  [label]="row.title"
+                  [ariaLabel]="row.title"
+                  [tooltipText]="row.hint"
+                  [checked]="row.on"
+                  (checkedChange)="onLayer(row.id, $event)">
+                </app-toggle>
+                @if (row.on) {
+                  <button
+                    type="button"
+                    class="dock__layer-expand"
+                    [class.dock__layer-expand--open]="row.expanded"
+                    [attr.aria-expanded]="row.expanded"
+                    [attr.aria-controls]="'layer-body-' + row.id"
+                    [attr.aria-label]="(row.expanded ? t.layerCollapse : t.layerExpand) + ': ' + row.title"
+                    [title]="row.expanded ? t.layerCollapse : t.layerExpand"
+                    (click)="toggleExpanded(row.id)">
+                    <lucide-icon [img]="chevronIcon" [size]="14"></lucide-icon>
+                  </button>
+                }
+              </div>
+              @if (row.expanded) {
+                <div class="dock__layer-body" [id]="'layer-body-' + row.id">
+                  @if (row.id === 'districts') {
+                    <!-- All district measures as a scrollable list in the dock (a dropdown menu was clipped by the dock). -->
+                    <div class="dock__metrics" role="radiogroup" [attr.aria-label]="t.chooseMetric">
+                      @for (m of metricOptions(); track m.value) {
+                        <button
+                          type="button"
+                          role="radio"
+                          class="dock__metric"
+                          [class.dock__metric--active]="m.value === state.params().districtsMetric"
+                          [attr.aria-checked]="m.value === state.params().districtsMetric"
+                          (click)="onMetricChange(m.value)">
+                          {{ m.label }}
+                        </button>
+                      }
+                    </div>
+                    @if (bp.mobile()) {
+                      <div class="dock__layer-tools">
+                        <app-button variant="ghost" [ariaLabel]="t.rankingTitle" [titleText]="t.rankingTitle" (btnClick)="state.rankingSheetOpen.set(true)">
+                          <lucide-icon [img]="rankingIcon" [size]="16"></lucide-icon>
+                          <span>{{ t.rankingButton }}</span>
+                        </app-button>
+                      </div>
+                    }
+                  }
+                  @if (row.slider; as slider) {
+                    <ng-container *ngTemplateOutlet="sliderTpl; context: { $implicit: slider }"></ng-container>
+                  }
+                  @if (row.legend; as spec) {
+                    <app-legend [group]="row.id" [spec]="spec"></app-legend>
+                  }
+                </div>
+              }
+            </li>
+          }
+        </ul>
+      </section>
 
-      <div class="dock__legend" [class.dock__legend--wide]="legendWide()">
-        <span class="dock__legend-title">{{ t.legend }}</span>
-        <app-legend [spec]="legend()"></app-legend>
+      <div class="dock__footer">
+        <app-button variant="ghost" [ariaLabel]="t.glossary" [titleText]="t.glossary" (btnClick)="openGlossary()">
+          <lucide-icon [img]="bookOpenIcon" [size]="15"></lucide-icon>
+          <span>{{ t.glossary }}</span>
+        </app-button>
       </div>
     </div>
-  </footer>
+  </aside>
+
+  <ng-template #sliderTpl let-slider>
+    <div class="dock__slider">
+      <div class="dock__slider-head">
+        <span class="dock__slider-label">{{ slider.label }}</span>
+        <span class="dock__value">{{ slider.readout }}</span>
+      </div>
+      <app-timeline-slider
+        [min]="slider.spec.min"
+        [max]="slider.spec.max"
+        [step]="slider.spec.step"
+        [value]="slider.value"
+        [markers]="slider.markers"
+        [trackGradient]="sliderRail"
+        [ariaLabel]="slider.label"
+        (valueChange)="onSliderChange(slider.spec.param, $event)"
+        (markerClick)="onMarkerClick(slider, $event)">
+      </app-timeline-slider>
+    </div>
+  </ng-template>
 
   <app-popup [closeAriaLabel]="t.close"></app-popup>
   <app-tooltip></app-tooltip>

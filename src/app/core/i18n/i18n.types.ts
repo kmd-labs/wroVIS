@@ -12,20 +12,9 @@ export interface Dict {
 
   // Top HUD & Navigation
   changeLanguage: string;
-  chooseView: string;
   stageAriaLabel: string;
 
   // Views (top-right switcher) and their dock subtitles
-  viewBuildings: string;
-  viewBridges: string;
-  viewTransit: string;
-  viewDistricts: string;
-  viewCyberpunk: string;
-  viewBuildingsDesc: string;
-  viewBridgesDesc: string;
-  viewTransitDesc: string;
-  viewDistrictsDesc: string;
-  viewCyberpunkDesc: string;
 
   // Splash / loading states
   splashLoadingMap: string;
@@ -34,21 +23,15 @@ export interface Dict {
   splashMapError: string;
 
   // Bottom Dock
-  sliderBuildingsMinLevels: string;
-  sliderBridgesMaxLength: string;
-  upTo: string;
   sliderTransitRadius: string;
   sliderDistrictsThreshold: string;
-  unitLevels: string;
   unitMeters: string;
   presetAll: string;
   palette: string;
   paletteNeon: string;
-  paletteKmd: string;
   paletteNeonHint: string;
-  paletteKmdHint: string;
-  legend: string;
   glossary: string;
+  legend: string;
   glossaryDesc: string;
   close: string;
 
@@ -108,28 +91,14 @@ export interface Dict {
   wkPlace: string;
   wkOrigin: string;
   walkHint: string;
-  transitModeLabel: string;
-  transitModeRadius: string;
-  transitModeBike: string;
   bkRoute: string;
   bkPoint: string;
-  bikeHint: string;
   bikeAddMore: string;
   bikeLoading: string;
   bikeError: string;
   bikeTotal: string;
   bikeNoLink: string;
-  bikeUndo: string;
-  bikeClear: string;
   unitKm: string;
-  bridgeOne: string;
-  bridgeFew: string;
-  bridgeMany: string;
-  segmentOne: string;
-  segmentFew: string;
-  segmentMany: string;
-  walkToggle: string;
-  walkToggleHint: string;
   wkOutside: string;
   legendHide: string;
   legendShow: string;
@@ -188,13 +157,85 @@ export interface Dict {
   maxspeedCoverage: string;
   propAddress: string;
   andMore: string;
-  propInside: string;
-  unitPlaces: string;
   propArchitect: string;
   propStyle: string;
   propHeritage: string;
   heritageListed: string;
   heritageRef: string;
+
+  // Dock, tools, layers and search
+  paletteNormal: string;
+  paletteNormalHint: string;
+  paletteSunset: string;
+  paletteSunsetHint: string;
+  dockLabel: string;
+  dockCollapse: string;
+  dockExpand: string;
+  searchLabel: string;
+  searchPlaceholder: string;
+  searchLoading: string;
+  searchError: string;
+  searchNoResults: string;
+  searchClear: string;
+  searchStreetHint: string;
+  addressOne: string;
+  addressFew: string;
+  addressMany: string;
+  toolLabel: string;
+  toolExplore: string;
+  toolWalk: string;
+  toolBike: string;
+  toolExploreHint: string;
+  toolWalkHint: string;
+  toolBikeHint: string;
+  exploreHint: string;
+  walkModeLabel: string;
+  walkModeReach: string;
+  walkModeRoute: string;
+  bikeModeLabel: string;
+  bikeModeStreets: string;
+  bikeModeCycleways: string;
+  bikeModeStreetsHint: string;
+  bikeModeCyclewaysHint: string;
+  routeHintWalk: string;
+  routeHintBikeStreets: string;
+  routeHintBikeCycleways: string;
+  routeWalkTotal: string;
+  routeBikeTotal: string;
+  routeTimeWalk: string;
+  routeTimeBike: string;
+  bikeOnCycleways: string;
+  bikeOnStreets: string;
+  routeNoLink: string;
+  routeLoadingWalk: string;
+  routeLoadingBike: string;
+  routeError: string;
+  routeUndo: string;
+  routeClear: string;
+  bkStreet: string;
+  wrRoute: string;
+  layersTitle: string;
+  layerExpand: string;
+  layerCollapse: string;
+  layerBuildings: string;
+  layerTrams: string;
+  layerStopRadius: string;
+  layerCycleways: string;
+  layerBridges: string;
+  layerDistricts: string;
+  layerBuildingsHint: string;
+  layerTramsHint: string;
+  layerStopRadiusHint: string;
+  layerCyclewaysHint: string;
+  layerBridgesHint: string;
+  layerDistrictsHint: string;
+  inspPlacesTitle: string;
+  poiFinance: string;
+  poiPublic: string;
+  poiCulture: string;
+  poiSport: string;
+  poiWorship: string;
+  poiTransport: string;
 
   // Attribution
   dataAttribution: string;

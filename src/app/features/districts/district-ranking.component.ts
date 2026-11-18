@@ -18,7 +18,7 @@ interface RankRow {
 }
 
 /**
- * Left-hand panel of the districts view: every numeric district attribute as an accordion section.
+ * Right-hand panel of the districts layer: every numeric district attribute as an accordion section.
  * Opening a section switches the choropleth to that metric (one open at a time, in sync with the dock)
  * and lists the 48 districts from the highest to the lowest value. Hovering or focusing a row
  * highlights the district on the map; clicking it frames the district and opens its card.
@@ -35,6 +35,7 @@ interface RankRow {
         class="ranking glass-panel"
         #panel
         [class.ranking--sheet]="bp.mobile()"
+        [class.palette-glass]="state.palette() !== 'normal'"
         [attr.aria-label]="t.rankingTitle">
         <header class="ranking__head">
           <div>
@@ -112,7 +113,7 @@ export class DistrictRankingComponent {
   private readonly collapsed = signal(false);
 
   readonly visible = computed(
-    () => this.state.currentView() === 'districts' && this.data.stats() !== null && (!this.bp.mobile() || this.state.rankingSheetOpen())
+    () => this.state.layers().has('districts') && this.data.stats() !== null && (!this.bp.mobile() || this.state.rankingSheetOpen())
   );
 
   readonly open = computed<DistrictMetric | null>(() => (this.collapsed() ? null : this.state.params().districtsMetric));
@@ -157,7 +158,7 @@ export class DistrictRankingComponent {
     });
     inject(DestroyRef).onDestroy(() => {
       observer.disconnect();
-      this.mapService.setLeftInset(0);
+      this.mapService.setRightInset(0);
     });
   }
 
@@ -194,10 +195,10 @@ export class DistrictRankingComponent {
 
   private insetPx(): number {
     const el = this.panel()?.nativeElement;
-    return el && !this.bp.mobile() ? Math.round(el.getBoundingClientRect().right) : 0;
+    return el && !this.bp.mobile() ? Math.round(window.innerWidth - el.getBoundingClientRect().left) : 0;
   }
 
   private reportInset() {
-    this.mapService.setLeftInset(this.insetPx());
+    this.mapService.setRightInset(this.insetPx());
   }
 }

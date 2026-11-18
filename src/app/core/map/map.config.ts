@@ -41,9 +41,11 @@ export const SRC_DISTRICT_LABELS = 'district_labels';
 export const SRC_WALK_STREETS = 'walk_streets';
 export const SRC_WALK_PLACES = 'walk_places';
 export const SRC_WALK_ORIGIN = 'walk_origin';
-/** Bike route planner (transport view): route legs, the short approaches to the network, and the waypoints. */
-export const SRC_BIKE_ROUTE = 'bike_route';
-export const SRC_BIKE_POINTS = 'bike_points';
+/** Route planner (walking or bike): route legs, the short approaches to the network, and the waypoints. */
+export const SRC_ROUTE = 'route';
+export const SRC_ROUTE_POINTS = 'route_points';
+/** Marker of the last address picked in the search box. */
+export const SRC_SEARCH = 'search_point';
 
 /** Data artefacts produced by `tools/pipeline` (paths relative to the document base). */
 export const DATA_PATHS = {
@@ -56,7 +58,9 @@ export const DATA_PATHS = {
   stats: 'assets/data/stats.json',
   manifest: 'assets/data/manifest.json',
   walkGraph: 'assets/data/walk.bin.gz',
-  cycleGraph: 'assets/data/cycle.bin.gz'
+  cycleGraph: 'assets/data/cycle.bin.gz',
+  bikeGraph: 'assets/data/bike.bin.gz',
+  addresses: 'assets/data/addresses.json.gz'
 } as const;
 
 /** Resolves an asset path against `<base href>` so it stays correct under `/wroVIS/` on GitHub Pages. */

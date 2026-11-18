@@ -7,6 +7,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { gzipSync } from 'node:zlib';
 import { BBOX_MARGIN_DEG, BOUNDARY_FILE, CITY_RELATION_ID, OUT_DIR, PBF_FILE, WORK_DIR } from './lib/config.mjs';
 import { PLACE_CATS, buildWalkGraph } from './lib/walk-graph.mjs';
 import { groupBridges } from './lib/bridge-groups.mjs';
@@ -192,6 +193,28 @@ function isWalkable(tags) {
   if (tags.foot === 'no' || tags.access === 'no' || tags.access === 'private') return tags.foot === 'yes' || tags.foot === 'designated';
   return true;
 }
+/**
+ * Bike network "via streets": cycle infrastructure plus every street a bike may use, with a kind per way
+ * (0 calm street or path, 1 cycle infrastructure, 2 busy street) that the app weighs when routing.
+ */
+const BIKE_STREET = new Set(['primary', 'primary_link', 'secondary', 'secondary_link', 'tertiary', 'tertiary_link', 'unclassified', 'residential', 'living_street', 'service', 'road', 'track', 'path']);
+const BIKE_BUSY = new Set(['primary', 'primary_link', 'secondary', 'secondary_link', 'tertiary', 'tertiary_link']);
+const BIKE_YES = new Set(['yes', 'designated', 'permissive']);
+function bikeKind(tags) {
+  if (!tags.highway || tags.area === 'yes') return -1;
+  if (cyclewayKind(tags)) return 1;
+  if (tags.bicycle === 'no' || tags.bicycle === 'dismount') return -1;
+  if ((tags.access === 'no' || tags.access === 'private') && !BIKE_YES.has(tags.bicycle)) return -1;
+  if (tags.highway === 'footway' || tags.highway === 'pedestrian') {
+    if (tags.bicycle === 'designated') return 1;
+    return tags.bicycle === 'yes' || tags.bicycle === 'permissive' ? 0 : -1;
+  }
+  if (!BIKE_STREET.has(tags.highway)) return -1;
+  return BIKE_BUSY.has(tags.highway) ? 2 : 0;
+}
+/** @type {Int32Array[]} node indices of bikeable ways, and their kinds */
+const bikeWays = [];
+const bikeKinds = [];
 /** @type {Int32Array[]} node indices of walkable ways */
 const walkWays = [];
 /** @type {Int32Array[]} node indices of cycle ways (the `cycleways` layer: cycleways, designated paths, lanes and tracks) */
@@ -221,11 +244,24 @@ function brunnel(tags) {
   return undefined;
 }
 
-/** `Street 12a` from addr:* tags (addr:place for addresses without a street), or undefined. */
+/** Street (addr:place for addresses without a street) and house number from addr:* tags, or null. */
+function addressParts(tags) {
+  const number = tags['addr:housenumber']?.trim();
+  const street = (tags['addr:street'] ?? tags['addr:place'])?.trim();
+  return number && street ? { street, number } : null;
+}
+/** `Street 12a` from addr:* tags, or undefined. */
 function formatAddress(tags) {
-  const number = tags['addr:housenumber'];
-  const street = tags['addr:street'] ?? tags['addr:place'];
-  return number && street ? `${street} ${number}` : undefined;
+  const a = addressParts(tags);
+  return a ? `${a.street} ${a.number}` : undefined;
+}
+/** Address points for the address search (building outlines and address nodes), first occurrence wins. */
+const addressPoints = new Map();
+function addAddressPoint(tags, pt) {
+  const a = addressParts(tags);
+  if (!a) return;
+  const key = `${a.street.toLowerCase()}|${a.number.toLowerCase()}`;
+  if (!addressPoints.has(key)) addressPoints.set(key, { ...a, lon: pt[0], lat: pt[1] });
 }
 /** `pl:Hala Stulecia` → Wikipedia article URL. */
 function wikipediaUrl(value) {
@@ -284,6 +320,19 @@ await pipeline(
               if (idx !== undefined) idxs[k++] = idx;
             }
             if (k >= 2) cycleWays.push(k === refs.length ? idxs : idxs.slice(0, k));
+          }
+          const bk = tags ? bikeKind(tags) : -1;
+          if (bk >= 0) {
+            const idxs = new Int32Array(refs.length);
+            let k = 0;
+            for (const ref of refs) {
+              const idx = nodeIndex.get(ref);
+              if (idx !== undefined) idxs[k++] = idx;
+            }
+            if (k >= 2) {
+              bikeWays.push(k === refs.length ? idxs : idxs.slice(0, k));
+              bikeKinds.push(bk);
+            }
           }
           if (tags && isWalkable(tags)) {
             // Walk network keeps node indices (shared nodes = topology) rather than plain coordinates.
@@ -425,7 +474,10 @@ function buildingFeature(type, id, tags, geometry) {
 
 function addPolygonThemes(type, id, tags, geometry, rep) {
   if (!inCity(rep)) return;
-  if (isBuilding(tags)) layers.buildings.push(buildingFeature(type, id, tags, geometry));
+  if (isBuilding(tags)) {
+    layers.buildings.push(buildingFeature(type, id, tags, geometry));
+    addAddressPoint(tags, rep);
+  }
   if (isWaterArea(tags)) layers.water.push(feature(type, id, geometry, clean({ kind: waterKind(tags), name: tags.name })));
   const g = greenKind(tags);
   if (g) layers.green.push(feature(type, id, geometry, clean({ kind: g, name: tags.name })));
@@ -688,11 +740,11 @@ function buildingAt(pt) {
 }
 
 const MAX_ADDRESSES = 3;
-const MAX_POI_NAMES = 3;
 const nodeAddresses = new Map();
 for (const n of taggedNodes) {
   const addr = formatAddress(n.tags);
   if (!addr) continue;
+  if (inCity([n.lon, n.lat])) addAddressPoint(n.tags, [n.lon, n.lat]);
   const i = buildingAt([n.lon, n.lat]);
   if (i < 0) continue;
   if (!nodeAddresses.has(i)) nodeAddresses.set(i, new Set());
@@ -716,11 +768,21 @@ for (const f of layers.poi) {
   poiByBuilding.get(i).push(f.properties);
   poiJoined++;
 }
+/** Places listed in a building's card; the card groups them by category. */
+const MAX_POI_LIST = 40;
+const POI_ORDER = ['shop', 'food', 'health', 'finance', 'public', 'education', 'culture', 'sport', 'worship', 'transport'];
+const poiField = v => String(v ?? '').replace(/[|;]/g, ' ').trim();
 for (const [i, list] of poiByBuilding) {
   const p = layers.buildings[i].properties;
-  const names = [...new Set(list.map(x => x.name).filter(Boolean))];
   p.poi_n = list.length;
-  if (names.length) p.poi = names.slice(0, MAX_POI_NAMES).join('; ');
+  const sorted = [...list].sort(
+    (a, b) =>
+      POI_ORDER.indexOf(a.cat) - POI_ORDER.indexOf(b.cat) ||
+      (a.name ? 0 : 1) - (b.name ? 0 : 1) ||
+      poiField(a.name).localeCompare(poiField(b.name), 'pl')
+  );
+  // "cat|sub|name;…" — sub is the OSM value (shop=bakery → bakery), name may be empty.
+  p.pois = sorted.slice(0, MAX_POI_LIST).map(x => [x.cat, poiField(x.sub), poiField(x.name)].join('|')).join(';');
 }
 const bAudit = audit.buildings;
 bAudit.withAddress = layers.buildings.filter(f => f.properties.addr).length;
@@ -764,6 +826,34 @@ const cycle = buildWalkGraph({ ways: cycleWays, lon: nodeLon, lat: nodeLat, node
 fs.writeFileSync(path.join(OUT_DIR, 'cycle.bin.gz'), cycle.gz);
 audit.cycle = cycle.stats;
 log(`cycle graph: ${JSON.stringify(cycle.stats)}, gzip ${(cycle.gz.length / 1e6).toFixed(2)} MB`);
+
+// Bike graph "via streets": cycle infrastructure and bikeable streets, with the kind of every edge.
+const bikeBbox = [cityBbox[0] - WALK_MARGIN_DEG, cityBbox[1] - WALK_MARGIN_DEG, cityBbox[2] + WALK_MARGIN_DEG, cityBbox[3] + WALK_MARGIN_DEG];
+const bike = buildWalkGraph({ ways: bikeWays, kinds: bikeKinds, lon: nodeLon, lat: nodeLat, nodeCount, bbox: bikeBbox, places: [] });
+fs.writeFileSync(path.join(OUT_DIR, 'bike.bin.gz'), bike.gz);
+audit.bike = bike.stats;
+log(`bike graph: ${JSON.stringify(bike.stats)}, gzip ${(bike.gz.length / 1e6).toFixed(2)} MB`);
+
+// Address index for the search box: streets once, then parallel arrays (street index, number, position).
+const addrList = [...addressPoints.values()].sort(
+  (a, b) => a.street.localeCompare(b.street, 'pl') || a.number.localeCompare(b.number, 'pl', { numeric: true })
+);
+const streetNames = [...new Set(addrList.map(a => a.street))];
+const streetIndex = new Map(streetNames.map((s, i) => [s, i]));
+const AO = [Math.floor(cityBbox[0] * 100) / 100, Math.floor(cityBbox[1] * 100) / 100];
+const addressIndex = {
+  v: 1,
+  o: AO,
+  streets: streetNames,
+  s: addrList.map(a => streetIndex.get(a.street)),
+  n: addrList.map(a => a.number),
+  x: addrList.map(a => Math.round((a.lon - AO[0]) * 1e5)),
+  y: addrList.map(a => Math.round((a.lat - AO[1]) * 1e5))
+};
+const addrGz = gzipSync(Buffer.from(JSON.stringify(addressIndex)), { level: 9 });
+fs.writeFileSync(path.join(OUT_DIR, 'addresses.json.gz'), addrGz);
+audit.addresses = { addresses: addrList.length, streets: streetNames.length };
+log(`address index: ${addrList.length} addresses on ${streetNames.length} streets, gzip ${(addrGz.length / 1e6).toFixed(2)} MB`);
 log(`walk graph: ${JSON.stringify(walk.stats)}, gzip ${(walk.gz.length / 1e6).toFixed(2)} MB`);
 
 // ─── Output ──────────────────────────────────────────────────────────────────

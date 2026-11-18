@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-17T20:19:34.992Z",
+  "generatedAt": "2026-11-18T19:23:25.696Z",
   "attribution": "© OpenStreetMap contributors, ODbL 1.0 — https://www.openstreetmap.org/copyright",
   "source": {
     "extract": "https://download.geofabrik.de/europe/poland/dolnoslaskie-latest.osm.pbf",
@@ -38,7 +38,7 @@
           "hsrc": "String",
           "addr": "String",
           "poi_n": "Number",
-          "poi": "String",
+          "pois": "String",
           "name": "String",
           "year": "Number",
           "heritage": "Number",
@@ -170,7 +170,7 @@
     },
     "buildings": {
       "features": 145155,
-      "bytes": 69593310
+      "bytes": 69781443
     },
     "water": {
       "features": 824,
@@ -300,9 +300,38 @@
       },
       "rawBytes": 172056,
       "km": 494
+    },
+    "bike": {
+      "nodes": 108338,
+      "edges": 129740,
+      "points": 89926,
+      "places": 0,
+      "placesByCat": {
+        "shop": 0,
+        "food": 0,
+        "education": 0,
+        "health": 0,
+        "culture": 0,
+        "services": 0,
+        "tram": 0,
+        "park": 0
+      },
+      "rawBytes": 2350000,
+      "km": 6657,
+      "kmByKind": [
+        5515,
+        493,
+        649
+      ]
+    },
+    "addresses": {
+      "addresses": 75816,
+      "streets": 2206
     }
   },
   "files": {
+    "addresses.json.gz": 421176,
+    "bike.bin.gz": 913205,
     "bridges.geojson": 375320,
     "city.geojson": 30121,
     "cycle.bin.gz": 70652,
@@ -311,6 +340,6 @@
     "tram_routes.geojson": 397739,
     "tram_stops.geojson": 86331,
     "walk.bin.gz": 1523699,
-    "wroclaw.pmtiles": 19167938
+    "wroclaw.pmtiles": 19318520
   }
 }

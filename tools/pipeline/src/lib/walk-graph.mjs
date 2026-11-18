@@ -6,7 +6,7 @@
  * their nearest node. Coordinates are Uint16 offsets inside the file's bbox (~0.4 m resolution).
  *
  * Layout (little-endian, sections 4-byte aligned):
- *   Uint32[8]  header: MAGIC, nodes, edges, geometry points, places, reserved…
+ *   Uint32[8]  header: MAGIC, nodes, edges, geometry points, places, flags (bit 0: edge kinds), reserved…
  *   Float64[4] quantisation box: minLon, minLat, maxLon, maxLat (extent of all stored points)
  *   Uint16     nodeX[nodes], nodeY[nodes]      (Morton-ordered, delta-coded mod 2^16)
  *   Uint32     edgeA[edges] (delta from previous edge), edgeB[edges] (B − A); edges sorted by A, A ≤ B
@@ -16,6 +16,7 @@
  *   Uint32     placeNode[places]       (sorted, delta-coded)
  *   Uint16     placeX[places], placeY[places]
  *   Uint8      placeCat[places]
+ *   Uint8      edgeKind[edges]         (only when header flag bit 0 is set: kind of the way each edge came from)
  */
 import { gzipSync } from 'node:zlib';
 
@@ -57,10 +58,11 @@ function simplifyLine(pts, tol, mLon) {
 }
 
 /**
- * @param {{ ways: Int32Array[], lon: Float64Array, lat: Float64Array, nodeCount: number, bbox: number[],
+ * @param {{ ways: Int32Array[], kinds?: number[], lon: Float64Array, lat: Float64Array, nodeCount: number, bbox: number[],
  *           places: { lon: number, lat: number, cat: number }[] }} input
+ *   kinds: optional Uint8 kind per way, stored per edge (e.g. street vs cycleway for weighted routing).
  */
-export function buildWalkGraph({ ways, lon, lat, nodeCount, bbox, places }) {
+export function buildWalkGraph({ ways, kinds, lon, lat, nodeCount, bbox, places }) {
   const [minLon, minLat, maxLon, maxLat] = bbox;
   const mLon = 111320 * Math.cos((((minLat + maxLat) / 2) * Math.PI) / 180);
   const inBox = i => lon[i] >= minLon && lon[i] <= maxLon && lat[i] >= minLat && lat[i] <= maxLat;
@@ -80,8 +82,8 @@ export function buildWalkGraph({ ways, lon, lat, nodeCount, bbox, places }) {
     return vertex[i];
   };
 
-  const edgeA = [], edgeB = [], edgeLen = [], edgeGeom = [];
-  const pushEdge = (idxs, from, to) => {
+  const edgeA = [], edgeB = [], edgeLen = [], edgeGeom = [], edgeKind = [];
+  const pushEdge = (idxs, from, to, kind) => {
     // Edges fully outside the area are dropped; edges crossing its edge are kept whole.
     let inside = false;
     for (let k = from; k <= to && !inside; k++) inside = inBox(idxs[k]);
@@ -98,16 +100,17 @@ export function buildWalkGraph({ ways, lon, lat, nodeCount, bbox, places }) {
     edgeB.push(vertexOf(idxs[to]));
     edgeLen.push(len);
     edgeGeom.push(interior);
+    edgeKind.push(kind);
   };
-  for (const w of ways) {
+  ways.forEach((w, wi) => {
     let start = 0;
     for (let k = 1; k < w.length; k++) {
       if (k === w.length - 1 || uses[w[k]] >= 2) {
-        pushEdge(w, start, k);
+        pushEdge(w, start, k, kinds ? kinds[wi] : 0);
         start = k;
       }
     }
-  }
+  });
 
   // Snap places to their nearest vertex through a 100 m grid.
   const CELL = 0.001;
@@ -172,10 +175,10 @@ export function buildWalkGraph({ ways, lon, lat, nodeCount, bbox, places }) {
     // Store each edge from its lower vertex; reverse the geometry when flipping it.
     let a = rank[edgeA[e]], b = rank[edgeB[e]], g = edgeGeom[e];
     if (b < a) { [a, b] = [b, a]; g = [...g].reverse(); }
-    return { a, b, len: edgeLen[e], g };
+    return { a, b, len: edgeLen[e], g, k: edgeKind[e] };
   }).sort((p, q) => p.a - q.a || p.b - q.b);
-  edgeA.length = edgeB.length = edgeLen.length = edgeGeom.length = 0;
-  for (const e of edgeOrder) { edgeA.push(e.a); edgeB.push(e.b); edgeLen.push(e.len); edgeGeom.push(e.g); }
+  edgeA.length = edgeB.length = edgeLen.length = edgeGeom.length = edgeKind.length = 0;
+  for (const e of edgeOrder) { edgeA.push(e.a); edgeB.push(e.b); edgeLen.push(e.len); edgeGeom.push(e.g); edgeKind.push(e.k); }
   for (const s of snapped) s.v = rank[s.v];
   snapped.sort((p, q) => p.v - q.v);
 
@@ -183,7 +186,7 @@ export function buildWalkGraph({ ways, lon, lat, nodeCount, bbox, places }) {
   const align = n => (n + 3) & ~3;
   // Every Uint16/Uint8 array is padded to 4 bytes on its own, so pairs are counted twice.
   const size =
-    32 + 32 + 2 * align(nNodes * 2) + nEdges * 8 + align(nEdges * 2) + align(nEdges) + 2 * align(nPoints * 2) + nPlaces * 4 + 2 * align(nPlaces * 2) + align(nPlaces);
+    32 + 32 + 2 * align(nNodes * 2) + nEdges * 8 + align(nEdges * 2) + align(nEdges) + 2 * align(nPoints * 2) + nPlaces * 4 + 2 * align(nPlaces * 2) + align(nPlaces) + (kinds ? align(nEdges) : 0);
   const buf = new ArrayBuffer(size);
   let off = 0;
   const u32 = n => { const a = new Uint32Array(buf, off, n); off += n * 4; return a; };
@@ -191,7 +194,7 @@ export function buildWalkGraph({ ways, lon, lat, nodeCount, bbox, places }) {
   const u8 = n => { const a = new Uint8Array(buf, off, n); off = align(off + n); return a; };
   const f64 = n => { const a = new Float64Array(buf, off, n); off += n * 8; return a; };
 
-  u32(8).set([WALK_MAGIC, nNodes, nEdges, nPoints, nPlaces, 0, 0, 0]);
+  u32(8).set([WALK_MAGIC, nNodes, nEdges, nPoints, nPlaces, kinds ? 1 : 0, 0, 0]);
   f64(4).set(qb);
   // Deltas wrap modulo 2^16 / 2^32, so decoding is a running sum in the same integer width.
   const nx = u16(nNodes), ny = u16(nNodes);
@@ -226,12 +229,13 @@ export function buildWalkGraph({ ways, lon, lat, nodeCount, bbox, places }) {
   const px = u16(nPlaces), py = u16(nPlaces);
   snapped.forEach((s, i) => { px[i] = qx(s.lon); py[i] = qy(s.lat); });
   u8(nPlaces).set(snapped.map(s => s.cat));
+  if (kinds) u8(nEdges).set(edgeKind);
   if (off !== size) throw new Error(`walk graph size mismatch ${off} != ${size}`);
 
   const raw = Buffer.from(buf);
   const placesByCat = Object.fromEntries(PLACE_CATS.map((c, i) => [c, snapped.filter(s => s.cat === i).length]));
   return {
     gz: gzipSync(raw, { level: 9 }),
-    stats: { nodes: nNodes, edges: nEdges, points: nPoints, places: nPlaces, placesByCat, rawBytes: raw.length, km: Math.round(edgeLen.reduce((s, l) => s + l, 0) / 1000) }
+    stats: { nodes: nNodes, edges: nEdges, points: nPoints, places: nPlaces, placesByCat, rawBytes: raw.length, km: Math.round(edgeLen.reduce((s, l) => s + l, 0) / 1000), ...(kinds ? { kmByKind: [0, 1, 2].map(k => Math.round(edgeLen.reduce((s, l, e) => s + (edgeKind[e] === k ? l : 0), 0) / 1000)) } : {}) }
   };
 }

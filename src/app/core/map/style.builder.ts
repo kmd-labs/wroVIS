@@ -5,15 +5,15 @@ import {
   BASEMAP_GLYPHS_URL,
   BASEMAP_TILEJSON_URL,
   DATA_PATHS,
-  MAP_FONT_BOLD,
   MAP_FONT_ITALIC,
   MAP_FONT_REGULAR,
   SRC_BASEMAP,
-  SRC_BIKE_POINTS,
-  SRC_BIKE_ROUTE,
   SRC_CITY,
   SRC_DISTRICTS,
   SRC_DISTRICT_LABELS,
+  SRC_ROUTE,
+  SRC_ROUTE_POINTS,
+  SRC_SEARCH,
   SRC_TRAM_STOPS,
   SRC_WALK_ORIGIN,
   SRC_WALK_PLACES,
@@ -24,8 +24,9 @@ import {
 import { StyleContext } from './map.types';
 import { Expr, StyleTools, byZoom, geometryIs, nameField, withVisibility } from './style.expr';
 import { thematicLayers } from './layers.registry';
+import { labelLooks } from './label-style';
 import { liveSourceData } from './live-sources';
-import { CyberRole, cyberToken } from '../../shared/cyber-palette';
+import { CyberRole, PALETTE_LOOK, cyberToken } from '../../shared/cyber-palette';
 
 const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
@@ -46,7 +47,7 @@ const BASE_TOKENS: Record<ThemeMode, Record<'road' | 'roadCasing' | 'rail' | 'pa
 
 /**
  * Produces the complete MapLibre style for the current context: OpenFreeMap basemap layers coloured
- * with KMD tokens, the wroVIS PMTiles overlay layers of every view (hidden unless active) and labels on top.
+ * with KMD tokens (or the neon palette), the wroVIS layer groups (hidden unless switched on) and labels on top.
  * The result is deterministic for a given context, which lets `map.setStyle(style, { diff: true })`
  * apply only the changed properties.
  */
@@ -69,19 +70,23 @@ export function buildMapStyle(ctx: StyleContext, data: StyleData, tools: StyleTo
       [SRC_WALK_STREETS]: { type: 'geojson', data: liveSourceData.get(SRC_WALK_STREETS) ?? EMPTY_FC },
       [SRC_WALK_PLACES]: { type: 'geojson', data: liveSourceData.get(SRC_WALK_PLACES) ?? EMPTY_FC, generateId: true },
       [SRC_WALK_ORIGIN]: { type: 'geojson', data: liveSourceData.get(SRC_WALK_ORIGIN) ?? EMPTY_FC },
-      [SRC_BIKE_ROUTE]: { type: 'geojson', data: liveSourceData.get(SRC_BIKE_ROUTE) ?? EMPTY_FC },
-      [SRC_BIKE_POINTS]: { type: 'geojson', data: liveSourceData.get(SRC_BIKE_POINTS) ?? EMPTY_FC }
+      [SRC_ROUTE]: { type: 'geojson', data: liveSourceData.get(SRC_ROUTE) ?? EMPTY_FC },
+      [SRC_ROUTE_POINTS]: { type: 'geojson', data: liveSourceData.get(SRC_ROUTE_POINTS) ?? EMPTY_FC },
+      [SRC_SEARCH]: { type: 'geojson', data: liveSourceData.get(SRC_SEARCH) ?? EMPTY_FC }
     },
     // Directional light of fill-extrusions: a colder, brighter key light makes neon façades pop.
     light:
-      ctx.view === 'cyberpunk'
-        ? { anchor: 'viewport', position: [1.3, 200, 35], color: tools.color(cyberToken(ctx.params.cyberPalette, 'hover')), intensity: 0.62 }
-        : { anchor: 'viewport', position: [1.15, 210, 30], intensity: 0.5 },
+      ctx.palette === 'neon'
+        ? { anchor: 'viewport', position: [1.3, 200, 35], color: tools.color(cyberToken('hover', 'neon')), intensity: 0.62 }
+        : ctx.palette === 'sunset'
+          ? // Soft warm-white key light from the west: a coloured light would muddy the pastel façades.
+            { anchor: 'viewport', position: [1.3, 250, 40], color: tools.color(cyberToken('panel', 'sunset')), intensity: 0.3 }
+          : { anchor: 'viewport', position: [1.15, 210, 30], intensity: 0.5 },
     layers: [...basemapGround(ctx, tools), ...thematicLayers(ctx, tools), ...basemapLabels(ctx, tools)]
   };
 }
 
-/** Colours of the basemap ground layers for the current view. */
+/** Colours of the basemap ground layers for the current palette. */
 interface GroundColors {
   bg: string;
   green: string | null;
@@ -101,12 +106,14 @@ interface GroundColors {
 
 function groundColors(ctx: StyleContext, tools: StyleTools): GroundColors {
   const c = tools.color;
-  if (ctx.view === 'cyberpunk') {
-    // Darkened basemap of the neon view: no land cover, dim streets, glowing city boundary.
-    const cy = (role: CyberRole) => c(cyberToken(ctx.params.cyberPalette, role));
+  if (ctx.palette !== 'normal') {
+    // Styled basemap: neon = darkened, no land cover, dim streets, glowing boundary; sunset = warm peach with soft greens.
+    const palette = ctx.palette;
+    const cy = (role: CyberRole) => c(cyberToken(role, palette));
+    const dark = PALETTE_LOOK[palette].dark;
     return {
       bg: cy('bg'),
-      green: null,
+      green: dark ? null : cy('park'),
       water: cy('water'),
       waterOpacity: 1,
       waterway: cy('waterway'),
@@ -145,7 +152,7 @@ function basemapGround(ctx: StyleContext, tools: StyleTools): LayerSpecification
   const g = groundColors(ctx, tools);
   const roadClass = (classes: string[]): Expr => ['all', geometryIs('LineString'), ['match', ['get', 'class'], classes, true, false]];
   const majorClasses = ['motorway', 'trunk', 'primary', 'secondary', 'tertiary'];
-  // Land cover is hidden (not removed) without a green colour, so switching views only toggles visibility.
+  // Land cover is hidden (not removed) without a green colour, so switching palettes only toggles visibility.
   const green = g.green ?? g.bg;
   return [
     { id: 'bg', type: 'background', paint: { 'background-color': g.bg } },
@@ -248,10 +255,15 @@ function basemapGround(ctx: StyleContext, tools: StyleTools): LayerSpecification
 function basemapLabels(ctx: StyleContext, tools: StyleTools): LayerSpecification[] {
   const c = tools.color;
   const name = nameField(ctx.lang);
-  // Districts draw their own labels, so the basemap keeps only city-level place names in that view.
-  const placeClasses = ctx.view === 'districts' ? ['city', 'town', 'village'] : ['city', 'town', 'village', 'suburb', 'neighbourhood', 'quarter'];
-  // The neon view keeps the darkened basemap free of labels so the glowing layers read clearly.
-  const visible = ctx.view !== 'cyberpunk';
+  // Districts draw their own labels, so the basemap keeps only city-level place names while they are on.
+  const placeClasses = ctx.layers.has('districts') ? ['city', 'town', 'village'] : ['city', 'town', 'village', 'suburb', 'neighbourhood', 'quarter'];
+  // The neon map keeps the darkened basemap free of labels so the glowing layers read clearly; the sunset map keeps them.
+  const visible = ctx.palette !== 'neon';
+  // Place names stay on every palette, in the palette's lettering (see label-style.ts).
+  const look = labelLooks(ctx, tools);
+  const major: unknown[] = ['city', 'town'];
+  const byClass = <T>(city: T, minor: T) => ['match', ['get', 'class'], major, city, minor] as Expr;
+  const fontByClass = ['match', ['get', 'class'], major, ['literal', look.city.font], ['literal', look.minor.font]] as Expr;
   const layers: LayerSpecification[] = [
     {
       id: 'base-label-road',
@@ -294,7 +306,7 @@ function basemapLabels(ctx: StyleContext, tools: StyleTools): LayerSpecification
       filter: ['match', ['get', 'class'], placeClasses, true, false],
       layout: {
         'text-field': name,
-        'text-font': ['match', ['get', 'class'], ['city', 'town'], ['literal', MAP_FONT_BOLD], ['literal', MAP_FONT_REGULAR]],
+        'text-font': fontByClass,
         // Zoom must be the outermost input, so the per-class sizes live inside the interpolation stops.
         'text-size': byZoom(
           [
@@ -303,16 +315,18 @@ function basemapLabels(ctx: StyleContext, tools: StyleTools): LayerSpecification
           ],
           1
         ),
-        'text-transform': ['match', ['get', 'class'], ['suburb', 'neighbourhood', 'quarter'], 'uppercase', 'none'],
-        'text-letter-spacing': ['match', ['get', 'class'], ['suburb', 'neighbourhood', 'quarter'], 0.08, 0],
+        'text-transform': byClass(look.city.transform, look.minor.transform),
+        'text-letter-spacing': byClass(look.city.spacing, look.minor.spacing),
         'text-max-width': 8
       },
       paint: {
-        'text-color': ['match', ['get', 'class'], ['city', 'town'], c('text-bright'), c('text-main')],
-        'text-halo-color': c('map-bg'),
-        'text-halo-width': 1.3
+        'text-color': byClass(look.city.color, look.minor.color),
+        'text-halo-color': byClass(look.city.halo, look.minor.halo),
+        'text-halo-width': byClass(look.city.haloWidth, look.minor.haloWidth),
+        'text-halo-blur': byClass(look.city.haloBlur, look.minor.haloBlur)
       }
     }
   ];
-  return layers.map(layer => withVisibility(layer, visible));
+  // The neon map hides road and water names (glowing layers read better without them) but keeps place names.
+  return layers.map(layer => withVisibility(layer, visible || layer.id === 'base-label-place'));
 }

@@ -1,12 +1,13 @@
 import { Injectable, NgZone, computed, effect, inject, signal, untracked } from '@angular/core';
 import type { FeatureCollection, Geometry } from 'geojson';
 import type { GeoJSONSource } from 'maplibre-gl';
-import { DATA_PATHS, SRC_WALK_ORIGIN, SRC_WALK_PLACES, SRC_WALK_STREETS, SRC_WROVIS, assetUrl } from '../map/map.config';
+import { SRC_WALK_ORIGIN, SRC_WALK_PLACES, SRC_WALK_STREETS, SRC_WROVIS } from '../map/map.config';
 import { MapService } from '../map/map.service';
 import { hiddenWalkBands, walkFilter } from '../map/layers.registry';
 import { liveSourceData } from '../map/live-sources';
 import { AppState } from '../state/app.state';
-import { PLACE_CATS, PlaceCat, WALK_M_PER_MIN, WalkGraph, decodeWalkGraph, nearestVertex, reach, shortestPaths } from './walk-graph';
+import { PLACE_CATS, PlaceCat, WALK_M_PER_MIN, WalkGraph, componentSizes, nearestNetworkVertex, nearestVertex, reach, shortestPaths } from './walk-graph';
+import { GraphStore } from './graph-store';
 
 export type WalkStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -21,7 +22,7 @@ export interface PlaceStat {
 const WAVE_MS = 1100;
 
 /**
- * Walking reach in the 3D buildings view: loads the pedestrian graph on the first click, and on every click (or change of the
+ * Walking reach of the "15-minute city" tool: loads the pedestrian graph when the tool opens, and on every click (or change of the
  * time limit) runs Dijkstra from the clicked point, writes the reached streets and places into GeoJSON
  * sources once, and plays a short wave that grows the reach from the origin. Nothing runs in between.
  */
@@ -30,9 +31,12 @@ export class WalkService {
   private readonly zone = inject(NgZone);
   private readonly state = inject(AppState);
   private readonly mapService = inject(MapService);
+  private readonly graphs = inject(GraphStore);
 
   readonly status = signal<WalkStatus>('idle');
   private readonly graph = signal<WalkGraph | null>(null);
+  /** Component of every vertex and component sizes, for snapping a click to the connected street network. */
+  private network: { comp: Int32Array; sizes: Uint32Array } | null = null;
   /** Places reached within the current limit (category and minutes). */
   private readonly reached = signal<{ cat: PlaceCat; t: number }[] | null>(null);
   /** True when the clicked point is too far from any footpath. */
@@ -51,14 +55,17 @@ export class WalkService {
   private wave = 0;
   /** Last reach, kept so buildings loaded after a pan can be marked without a new search. */
   private last: { graph: WalkGraph; dist: Float64Array; origin: [number, number]; maxMetres: number } | null = null;
-  /** Buildings currently carrying the `wt` feature-state (ids in the wroVIS tiles). */
-  private marked = new Set<number | string>();
+  /** Buildings carrying the `wt` feature-state (ids in the wroVIS tiles) and their minutes. */
+  private marked = new Map<number | string, number>();
+  /** Verdict per building for the reach in `judgedFor`: minutes, or null when outside it. */
+  private judged = new Map<number | string, number | null>();
+  private judgedFor: object | null = null;
   private moveTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
-    // Load the graph on the first click (the 3D buildings view is the start view, so not on open).
+    // Load the graph as soon as the "15 minutes" tool opens (not at page load), so the first click answers at once.
     effect(() => {
-      if (this.state.walkOrigin() && this.status() === 'idle') untracked(() => this.load());
+      if ((this.state.tool() === 'walk' || this.state.walkOrigin()) && this.status() === 'idle') untracked(() => this.load());
     });
 
     // Switching the reach off clears everything it drew.
@@ -108,15 +115,9 @@ export class WalkService {
   private async load() {
     this.status.set('loading');
     try {
-      const res = await fetch(assetUrl(DATA_PATHS.walkGraph));
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      let bytes = await res.arrayBuffer();
-      // The file is gzip; a server that already sent Content-Encoding: gzip hands over the raw graph instead.
-      const head = new Uint8Array(bytes, 0, 2);
-      if (head[0] === 0x1f && head[1] === 0x8b) {
-        bytes = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
-      }
-      this.graph.set(decodeWalkGraph(bytes));
+      const { g, comp } = await this.graphs.load('walk');
+      this.network = { comp, sizes: componentSizes(comp) };
+      this.graph.set(g);
       this.status.set('ready');
     } catch (err) {
       console.error('[wroVIS] walk graph failed to load', err);
@@ -125,7 +126,7 @@ export class WalkService {
   }
 
   private compute(graph: WalkGraph, [lon, lat]: [number, number], minutes: number, animate: boolean) {
-    const start = nearestVertex(graph, lon, lat);
+    const start = this.network ? nearestNetworkVertex(graph, this.network.comp, this.network.sizes, lon, lat) : nearestVertex(graph, lon, lat);
     const origin: FeatureCollection = { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: {} }] };
     if (!start) {
       this.outside.set(true);
@@ -157,31 +158,56 @@ export class WalkService {
     if (!map || !last || !map.getSource(SRC_WROVIS)) return;
     this.zone.runOutsideAngular(() => {
       const { graph, dist, origin, maxMetres } = last;
+      // A new reach starts a new verdict cache; after a pan only the newly loaded buildings are computed.
+      const fresh = this.judgedFor !== last;
+      if (fresh) {
+        this.judged.clear();
+        this.judgedFor = last;
+      }
       const next = new Map<number | string, number>();
       const [ox, oy] = origin;
       for (const f of map.querySourceFeatures(SRC_WROVIS, { sourceLayer: 'buildings' })) {
-        if (f.id === undefined || f.id === null || next.has(f.id)) continue;
-        const c = ringCentre(f.geometry);
-        if (!c) continue;
-        // Cheap straight-line cut first: nothing beyond the walking limit can be within it.
-        if (Math.hypot((c[0] - ox) * M_LON, (c[1] - oy) * M_LAT) > maxMetres + 60) continue;
-        const v = nearestVertex(graph, c[0], c[1]);
-        if (!v) continue;
-        const metres = dist[v.v] + v.d;
-        if (metres <= maxMetres) next.set(f.id, metres / WALK_M_PER_MIN);
+        const id = f.id;
+        if (id === undefined || id === null || next.has(id)) continue;
+        let t = this.judged.get(id);
+        if (t === undefined) {
+          t = null;
+          const c = ringCentre(f.geometry);
+          // Cheap straight-line cut first: nothing beyond the walking limit can be within it.
+          if (c && Math.hypot((c[0] - ox) * M_LON, (c[1] - oy) * M_LAT) <= maxMetres + 60) {
+            const v = nearestVertex(graph, c[0], c[1]);
+            const metres = v ? dist[v.v] + v.d : Infinity;
+            if (metres <= maxMetres) t = metres / WALK_M_PER_MIN;
+          }
+          this.judged.set(id, t);
+        }
+        if (t !== null) next.set(id, t);
       }
-      for (const id of this.marked) if (!next.has(id)) map.removeFeatureState({ source: SRC_WROVIS, sourceLayer: 'buildings', id }, 'wt');
-      for (const [id, t] of next) map.setFeatureState({ source: SRC_WROVIS, sourceLayer: 'buildings', id }, { wt: t });
-      this.marked = new Set(next.keys());
+      const ref = (id: number | string) => ({ source: SRC_WROVIS, sourceLayer: 'buildings', id });
+      // Feature state changes re-upload the 3D buildings, so only the differences are written.
+      if (fresh) {
+        for (const id of this.marked.keys()) {
+          if (next.has(id)) continue;
+          map.removeFeatureState(ref(id), 'wt');
+          this.marked.delete(id);
+        }
+      }
+      for (const [id, t] of next) {
+        if (this.marked.get(id) === t) continue;
+        map.setFeatureState(ref(id), { wt: t });
+        this.marked.set(id, t);
+      }
     });
   }
 
   private unmarkBuildings() {
     const map = this.mapService.instance;
     if (map && map.getSource(SRC_WROVIS)) {
-      for (const id of this.marked) map.removeFeatureState({ source: SRC_WROVIS, sourceLayer: 'buildings', id }, 'wt');
+      for (const id of this.marked.keys()) map.removeFeatureState({ source: SRC_WROVIS, sourceLayer: 'buildings', id }, 'wt');
     }
     this.marked.clear();
+    this.judged.clear();
+    this.judgedFor = null;
   }
 
   /** Grows the reach from 0 to `minutes` by animating the layer filters, then restores the style's own filter. */

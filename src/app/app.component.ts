@@ -1,15 +1,6 @@
-import {
-  AfterViewInit,
-  Component,
-  ElementRef,
-  OnDestroy,
-  computed,
-  effect,
-  inject,
-  signal,
-  viewChild
-} from '@angular/core';
-import { LucideAngularModule, Globe, BookOpen, ListOrdered, Trash2, Undo2 } from 'lucide-angular';
+import { NgTemplateOutlet } from '@angular/common';
+import { AfterViewInit, Component, ElementRef, OnDestroy, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { LucideAngularModule, BookOpen, ChevronDown, Footprints, Globe, ListOrdered, MousePointerClick, Bike, Trash2, Undo2 } from 'lucide-angular';
 import {
   BrandComponent,
   ButtonComponent,
@@ -30,25 +21,39 @@ import {
   SwitcherOption,
   ToggleComponent
 } from '@kmd/design-system';
+import type { FeatureCollection } from 'geojson';
+import type { GeoJSONSource } from 'maplibre-gl';
 import { I18nService } from './core/i18n/i18n.service';
 import { Dict, Lang } from './core/i18n/i18n.types';
 import { DataService } from './core/data/data.service';
 import { MapStageComponent } from './core/map/map-stage.component';
 import { MapService } from './core/map/map.service';
-import { DISTRICT_METRICS, VIEWS } from './core/map/layers.registry';
-import { CyberPalette, DistrictMetric, METRIC_FORMAT, SliderParam, StyleContext, VIEW_IDS, ViewId } from './core/map/map.types';
+import { DISTRICT_METRICS, GROUPS, routeLegend, walkLegend } from './core/map/layers.registry';
+import { SRC_SEARCH } from './core/map/map.config';
+import { liveSourceData } from './core/map/live-sources';
+import {
+  BikeMode,
+  DistrictMetric,
+  LAYER_IDS,
+  LayerId,
+  LegendSpec,
+  METRIC_FORMAT,
+  Palette,
+  SliderParam,
+  SliderSpec,
+  StyleContext,
+  Tool,
+  WalkMode
+} from './core/map/map.types';
 import { AppState } from './core/state/app.state';
-import { FeatureDetailsComponent } from './features/inspector/feature-details.component';
 import { MapTooltipComponent } from './features/inspector/map-tooltip.component';
-import { describeFeature } from './features/inspector/feature-format';
 import { LegendComponent, METRIC_LABEL } from './shared/legend/legend.component';
-import { CARD_VIEWS, CyberScanCardComponent } from './features/inspector/cyber-scan-card.component';
-import { CyberRole, cyberToken } from './shared/cyber-palette';
+import { CyberScanCardComponent } from './features/inspector/cyber-scan-card.component';
+import { cyberToken, CyberRole, styledPalette } from './shared/cyber-palette';
 import { DistrictRankingComponent } from './features/districts/district-ranking.component';
+import { AddressSearchComponent, PickedAddress, PickedStreet } from './features/search/address-search.component';
 import { WalkService } from './core/walk/walk.service';
-import { BikeRouteService, pointLabel } from './core/bike/bike-route.service';
-import { BridgeCountService } from './core/data/bridge-count.service';
-import type { TransitMode } from './core/map/map.types';
+import { RouteService, pointLabel } from './core/route/route.service';
 import type { PlaceCat } from './core/walk/walk-graph';
 
 const PLACE_LABEL: Record<PlaceCat, keyof Dict> = {
@@ -62,26 +67,49 @@ const PLACE_LABEL: Record<PlaceCat, keyof Dict> = {
   park: 'placePark'
 };
 
-const VIEW_LABEL: Record<ViewId, { title: keyof Dict; desc: keyof Dict }> = {
-  buildings: { title: 'viewBuildings', desc: 'viewBuildingsDesc' },
-  bridges: { title: 'viewBridges', desc: 'viewBridgesDesc' },
-  transit: { title: 'viewTransit', desc: 'viewTransitDesc' },
-  districts: { title: 'viewDistricts', desc: 'viewDistrictsDesc' },
-  cyberpunk: { title: 'viewCyberpunk', desc: 'viewCyberpunkDesc' }
+const LAYER_LABEL: Record<LayerId, { title: keyof Dict; hint: keyof Dict }> = {
+  buildings: { title: 'layerBuildings', hint: 'layerBuildingsHint' },
+  trams: { title: 'layerTrams', hint: 'layerTramsHint' },
+  stopRadius: { title: 'layerStopRadius', hint: 'layerStopRadiusHint' },
+  cycleways: { title: 'layerCycleways', hint: 'layerCyclewaysHint' },
+  bridges: { title: 'layerBridges', hint: 'layerBridgesHint' },
+  districts: { title: 'layerDistricts', hint: 'layerDistrictsHint' }
 };
 
 const SLIDER_LABEL: Record<SliderParam, keyof Dict> = {
-  bridgesMaxLength: 'sliderBridgesMaxLength',
   transitRadius: 'sliderTransitRadius',
   districtsThreshold: 'sliderDistrictsThreshold',
-  cyberMinLevels: 'sliderBuildingsMinLevels',
   walkMinutes: 'sliderWalkMinutes'
 };
+
+/** Everything the dock needs to draw one slider. */
+interface SliderView {
+  spec: SliderSpec;
+  value: number;
+  label: string;
+  readout: string;
+  markers: TimelineMarker[];
+}
+
+/** One row of the layer list: the switch, and while it is on its slider and legend. */
+interface LayerRow {
+  id: LayerId;
+  title: string;
+  hint: string;
+  on: boolean;
+  /** On and unfolded: its slider and legend are shown. */
+  expanded: boolean;
+  slider: SliderView | null;
+  legend: LegendSpec | null;
+}
+
+const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
 @Component({
   selector: 'app-root',
   standalone: true,
   imports: [
+    NgTemplateOutlet,
     LucideAngularModule,
     BrandComponent,
     ButtonComponent,
@@ -96,7 +124,8 @@ const SLIDER_LABEL: Record<SliderParam, keyof Dict> = {
     SwitcherComponent,
     ToggleComponent,
     CyberScanCardComponent,
-    DistrictRankingComponent
+    DistrictRankingComponent,
+    AddressSearchComponent
   ],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss'
@@ -113,18 +142,22 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   readonly data = inject(DataService);
   readonly state = inject(AppState);
   readonly walk = inject(WalkService);
-  readonly bike = inject(BikeRouteService);
-  private readonly bridgeCount = inject(BridgeCountService);
+  readonly route = inject(RouteService);
 
   readonly globeIcon = Globe;
   readonly bookOpenIcon = BookOpen;
   readonly rankingIcon = ListOrdered;
   readonly undoIcon = Undo2;
   readonly clearIcon = Trash2;
+  readonly chevronIcon = ChevronDown;
+  readonly groupIcon = (id: LayerId) => GROUPS[id].icon;
 
   private readonly header = viewChild.required<ElementRef<HTMLElement>>('header');
   private readonly dock = viewChild.required<ElementRef<HTMLElement>>('dock');
   private resizeObserver: ResizeObserver | null = null;
+
+  /** Phones: the dock is a bottom sheet that can be folded down to its search row (folded at start, so the map shows). */
+  readonly dockOpen = signal(!this.bp.mobile());
 
   /** Neutral slider rail (the design-system default gradient is the SST thermal scale). */
   readonly sliderRail = 'var(--color-surface-muted-strong)';
@@ -142,6 +175,22 @@ export class AppComponent implements AfterViewInit, OnDestroy {
         currentLang: this.i18n.lang(),
         supportedLangs: this.i18n.langs
       });
+    });
+
+    // Styled palettes (neon, sunset): HUD panels with `.palette-glass` read these from :root.
+    effect(() => {
+      const styled = this.state.palette() !== 'normal';
+      const root = document.documentElement.style;
+      const vars: [string, CyberRole][] = [['--neon-accent', 'outline'], ['--neon-hl', 'select'], ['--neon-bg', 'panel'], ['--neon-ink', 'hover']];
+      for (const [name, role] of vars) {
+        if (styled) root.setProperty(name, this.cyberVar(role));
+        else root.removeProperty(name);
+      }
+    });
+
+    // Intro flight over the city as the splash fades out (once).
+    effect(() => {
+      if (this.mapService.status() === 'ready' && (this.splash.fading() || !this.splash.visible())) this.mapService.playIntro();
     });
 
     // Splash: basemap first, then data; fade out once the brand reveal finished and the map rendered its first frame.
@@ -164,28 +213,6 @@ export class AppComponent implements AfterViewInit, OnDestroy {
         this.splash.finish();
       }
     });
-
-    // A clicked thematic feature opens the details popup; closing it clears the selection.
-    // The neon and 3D buildings views show a card pinned next to the feature instead (FeatureCardComponent).
-    effect(() => {
-      const pick = this.state.selected();
-      if (!pick || CARD_VIEWS.includes(this.state.currentView())) {
-        if (this.popup.config()?.id === 'feature') this.popup.close();
-        return;
-      }
-      const t = this.i18n.t();
-      const d = describeFeature(pick, t, this.i18n.lang(), this.data.stats());
-      this.popup.open({
-        id: 'feature',
-        title: d.title,
-        subtitle: d.subtitle,
-        component: FeatureDetailsComponent,
-        componentInputs: { rows: d.rows, osmUrl: d.osmUrl, osmLabel: t.openInOsm, wikiUrl: d.wikiUrl ?? null, wikiLabel: t.openInWikipedia },
-        size: 'sm',
-        actions: [{ label: computed(() => this.i18n.t().close), variant: 'default' }],
-        onClose: () => this.state.selected.set(null)
-      });
-    });
   }
 
   // ─── Header ───────────────────────────────────────────────────────────────
@@ -199,131 +226,79 @@ export class AppComponent implements AfterViewInit, OnDestroy {
     }))
   );
 
-  readonly viewOptions = computed<DropdownOption<ViewId>[]>(() => {
+  readonly paletteOptions = computed<SwitcherOption<Palette>[]>(() => {
     const t = this.i18n.t();
-    return VIEW_IDS.map(id => ({ value: id, label: t[VIEW_LABEL[id].title], icon: VIEWS[id].icon }));
+    return [
+      { value: 'normal', label: t.paletteNormal, tooltip: t.paletteNormalHint },
+      { value: 'neon', label: t.paletteNeon, tooltip: t.paletteNeonHint },
+      { value: 'sunset', label: t.paletteSunset, tooltip: t.paletteSunsetHint }
+    ];
   });
 
-  readonly currentViewIcon = computed(() => VIEWS[this.state.currentView()].icon);
+  onPalette(palette: Palette | undefined) {
+    if (palette) this.state.setPalette(palette);
+  }
 
   readonly isPopupOpen = computed(() => this.popup.config() !== null);
 
-  // ─── Dock ─────────────────────────────────────────────────────────────────
+  // ─── Dock: tools ──────────────────────────────────────────────────────────
 
   private readonly styleCtx = computed<StyleContext>(() => ({
     mode: this.theme.mode(),
     lang: this.i18n.lang(),
-    view: this.state.currentView(),
+    palette: this.state.palette(),
+    layers: this.state.layers(),
+    tool: this.state.tool(),
+    walkMode: this.state.walkMode(),
     params: this.state.params(),
     stats: this.data.stats(),
     hidden: this.state.hiddenLegend(),
-    walkEnabled: this.state.walkEnabled(),
     walkActive: this.state.walkActive(),
-      transitMode: this.state.transitMode()
+    searchStreet: this.state.searchStreet()
   }));
 
-  readonly viewTitle = computed(() => this.i18n.t()[VIEW_LABEL[this.state.currentView()].title]);
-  readonly viewDesc = computed(() => this.i18n.t()[VIEW_LABEL[this.state.currentView()].desc]);
-
-  readonly slider = computed(() => VIEWS[this.state.currentView()].slider(this.styleCtx()));
-  readonly legend = computed(() => VIEWS[this.state.currentView()].legend(this.styleCtx()));
-  readonly legendWide = computed(() => {
-    const spec = this.legend();
-    return spec.kind === 'categorical' && spec.wide === true;
-  });
-
-  readonly sliderValue = computed(() => {
-    const spec = this.slider();
-    const value = this.state.params()[spec.param];
-    return Math.min(spec.max, Math.max(spec.min, value));
-  });
-
-  readonly sliderLabel = computed(() => this.i18n.t()[SLIDER_LABEL[this.slider().param]]);
-
-  readonly sliderReadout = computed(() => {
-    const spec = this.slider();
-    const value = this.sliderValue();
-    // Filters read "all" at their neutral end: the start for minimum thresholds, the end for the bridge length limit.
-    const neutral = spec.param === 'bridgesMaxLength' ? value === spec.max : value === spec.min && spec.param !== 'transitRadius' && spec.param !== 'walkMinutes';
-    const base = neutral ? this.i18n.t().presetAll : this.formatValue(value, spec.param);
-    if (spec.param === 'bridgesMaxLength') {
-      // Bridges visible at this threshold (and legend), counted as bridges and as their segments.
-      const c = this.bridgeCount.counts();
-      if (c) return `${base} · ${this.countLabel(c.bridges, 'bridge')} · ${this.countLabel(c.segments, 'segment')}`;
-    }
-    return base;
-  });
-
-  /** "1 most / 3 mosty / 12 mostów": Polish plural forms via Intl.PluralRules. */
-  private countLabel(n: number, noun: 'bridge' | 'segment'): string {
-    const t = this.i18n.t();
-    const form = new Intl.PluralRules(this.i18n.lang()).select(n);
-    const words = noun === 'bridge' ? { one: t.bridgeOne, few: t.bridgeFew, many: t.bridgeMany } : { one: t.segmentOne, few: t.segmentFew, many: t.segmentMany };
-    const word = form === 'one' ? words.one : form === 'few' ? words.few : words.many;
-    return `${new Intl.NumberFormat(this.i18n.lang()).format(n)} ${word}`;
-  }
-
-  // ─── Transport: bike route planner ───────────────────────────────────────
-
-  readonly isBikeMode = computed(() => this.state.currentView() === 'transit' && this.state.transitMode() === 'bike');
-
-  readonly transitModeOptions = computed<SwitcherOption<TransitMode>[]>(() => {
+  readonly toolOptions = computed<SwitcherOption<Tool>[]>(() => {
     const t = this.i18n.t();
     return [
-      { value: 'radius', label: t.transitModeRadius },
-      { value: 'bike', label: t.transitModeBike }
+      { value: 'explore', label: t.toolExplore, icon: MousePointerClick, tooltip: t.toolExploreHint },
+      { value: 'walk', label: t.toolWalk, icon: Footprints, tooltip: t.toolWalkHint },
+      { value: 'bike', label: t.toolBike, icon: Bike, tooltip: t.toolBikeHint }
     ];
   });
 
-  onTransitMode(mode: TransitMode | undefined) {
-    if (mode) this.state.transitMode.set(mode);
-  }
-
-  /** Legs of the bike route with letters and distances for the dock. */
-  readonly bikeLegs = computed(() => {
-    const t = this.i18n.t();
-    const nf = new Intl.NumberFormat(this.i18n.lang(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    return this.bike.legs().map((leg, i) => ({
-      label: `${pointLabel(i)} → ${pointLabel(i + 1)}`,
-      value: leg.metres === null ? t.bikeNoLink : `${nf.format(leg.metres / 1000)} ${t.unitKm}`,
-      broken: leg.metres === null
-    }));
-  });
-
-  readonly bikeTotal = computed(() => {
-    const nf = new Intl.NumberFormat(this.i18n.lang(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    return `${nf.format(this.bike.totalKm())} ${this.i18n.t().unitKm}`;
-  });
-
-  readonly sliderMarkers = computed<TimelineMarker[]>(() => {
-    const spec = this.slider();
-    const current = this.sliderValue();
-    return spec.presets.map(v => ({ id: String(v), value: v, label: this.formatValue(v, spec.param), active: v === current }));
-  });
-
-  readonly paletteOptions = computed<SwitcherOption<CyberPalette>[]>(() => {
+  readonly walkModeOptions = computed<SwitcherOption<WalkMode>[]>(() => {
     const t = this.i18n.t();
     return [
-      { value: 'neon', label: t.paletteNeon, tooltip: t.paletteNeonHint },
-      { value: 'kmd', label: t.paletteKmd, tooltip: t.paletteKmdHint }
+      { value: 'reach', label: t.walkModeReach },
+      { value: 'route', label: t.walkModeRoute }
     ];
   });
 
-  // ─── Walking reach ────────────────────────────────────────────────────────
+  readonly bikeModeOptions = computed<SwitcherOption<BikeMode>[]>(() => {
+    const t = this.i18n.t();
+    return [
+      { value: 'streets', label: t.bikeModeStreets, tooltip: t.bikeModeStreetsHint },
+      { value: 'cycleways', label: t.bikeModeCycleways, tooltip: t.bikeModeCyclewaysHint }
+    ];
+  });
 
-  readonly isBuildings = computed(() => this.state.currentView() === 'buildings');
-
-  /** In the CyberPunk view the dock takes the neon "scanner" look of the feature card. */
-  readonly neonDock = computed(() => this.state.currentView() === 'cyberpunk');
-
-  /** CSS reference to a colour role of the active neon palette (`--color-cy-<palette>-<role>`). */
-  cyberVar(role: CyberRole): string {
-    return `var(--color-${cyberToken(this.state.params().cyberPalette, role)})`;
+  onTool(tool: Tool | undefined) {
+    if (tool) this.state.setTool(tool);
   }
-  /** The 3D buildings view carries the walking reach when it is switched on (stats in the dock, slider = time limit). */
-  readonly isWalk = computed(() => this.isBuildings() && this.state.walkEnabled());
-  /** The buildings view's only slider is the walking time, so it goes away with the reach. */
-  readonly showSlider = computed(() => (!this.isBuildings() || this.state.walkEnabled()) && !this.isBikeMode());
+
+  onWalkMode(mode: WalkMode | undefined) {
+    if (mode) this.state.setWalkMode(mode);
+  }
+
+  onBikeMode(mode: BikeMode | undefined) {
+    if (mode) this.state.setBikeMode(mode);
+  }
+
+  readonly isWalkReach = computed(() => this.state.tool() === 'walk' && this.state.walkMode() === 'reach');
+  readonly isRoute = computed(() => this.state.routeProfile() !== null);
+
+  readonly walkSlider = computed(() => this.sliderView({ param: 'walkMinutes', min: 5, max: 20, step: 5, presets: [5, 10, 15, 20], unit: 'minutes' }));
+  readonly walkLegendSpec = computed(() => walkLegend(this.styleCtx()));
 
   /** Place counts in reach, with localised labels and the nearest place of each kind. */
   readonly walkStats = computed(() => {
@@ -341,6 +316,138 @@ export class AppComponent implements AfterViewInit, OnDestroy {
     }));
   });
 
+  readonly routeLegendSpec = computed(() => {
+    const profile = this.state.routeProfile();
+    return profile ? routeLegend(profile, this.styleCtx()) : null;
+  });
+
+  readonly routeHint = computed(() => {
+    const t = this.i18n.t();
+    const profile = this.state.routeProfile();
+    return profile === 'walk' ? t.routeHintWalk : profile === 'bikeStreets' ? t.routeHintBikeStreets : t.routeHintBikeCycleways;
+  });
+
+  readonly routeLoadingLabel = computed(() => {
+    const t = this.i18n.t();
+    const profile = this.state.routeProfile();
+    return profile === 'walk' ? t.routeLoadingWalk : profile === 'bikeStreets' ? t.routeLoadingBike : t.bikeLoading;
+  });
+
+  /** Legs of the route with letters and distances for the dock. */
+  readonly routeLegs = computed(() => {
+    const t = this.i18n.t();
+    const km = this.kmFormat();
+    const strict = this.state.routeProfile() === 'bikeCycleways';
+    return this.route.legs().map((leg, i) => ({
+      label: `${pointLabel(i)} → ${pointLabel(i + 1)}`,
+      value: leg.metres === null ? (strict ? t.bikeNoLink : t.routeNoLink) : `${km.format(leg.metres / 1000)} ${t.unitKm}`,
+      broken: leg.metres === null
+    }));
+  });
+
+  readonly routeTotal = computed(() => {
+    const t = this.i18n.t();
+    const s = this.route.summary();
+    const profile = this.state.routeProfile();
+    const mf = new Intl.NumberFormat(this.i18n.lang(), { maximumFractionDigits: 0 });
+    const km = this.kmFormat();
+    return {
+      km: `${km.format(s.metres / 1000)} ${t.unitKm}`,
+      caption: profile === 'walk' ? t.routeWalkTotal : profile === 'bikeCycleways' ? t.bikeTotal : t.routeBikeTotal,
+      time: `${mf.format(Math.max(1, Math.round(s.minutes)))} ${profile === 'walk' ? t.routeTimeWalk : t.routeTimeBike}`,
+      split:
+        profile === 'bikeStreets' && s.metres > 0
+          ? `${km.format(s.cycleMetres / 1000)} ${t.unitKm} ${t.bikeOnCycleways} · ${km.format(s.streetMetres / 1000)} ${t.unitKm} ${t.bikeOnStreets}`
+          : null
+    };
+  });
+
+  private kmFormat() {
+    return new Intl.NumberFormat(this.i18n.lang(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  // ─── Dock: address search ────────────────────────────────────────────────
+
+  /** A picked address acts in the active tool: start of the reach, next route point, or the building's card. */
+  async onAddress(address: PickedAddress) {
+    this.state.searchStreet.set(null);
+    this.setSearchPoint(address.lngLat);
+    const tool = this.state.tool();
+    if (this.state.routeProfile() !== null) {
+      this.route.add(address.lngLat);
+      // Frame the whole route (all waypoints), not only the new point.
+      this.mapService.fitPoints(this.state.routePoints());
+      return;
+    }
+    if (tool === 'walk') this.state.walkOrigin.set(address.lngLat);
+    if (this.bp.mobile()) this.dockOpen.set(false);
+    await this.mapService.flyToPoint(address.lngLat);
+    const building = this.mapService.buildingAt(address.lngLat);
+    this.state.selected.set(building);
+  }
+
+  /** A whole street: frame it and let its line pulse a few times (see MapService.pulseStreet). */
+  onStreet(street: PickedStreet) {
+    this.setSearchPoint(null);
+    this.state.selected.set(null);
+    this.state.searchStreet.set(street.name);
+    if (this.bp.mobile()) this.dockOpen.set(false);
+    this.mapService.fitStreet(street.bounds);
+  }
+
+  onSearchCleared() {
+    this.setSearchPoint(null);
+    this.state.searchStreet.set(null);
+  }
+
+  private setSearchPoint(lngLat: [number, number] | null) {
+    this.state.searchPoint.set(lngLat);
+    const fc: FeatureCollection = lngLat ? { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: lngLat }, properties: {} }] } : EMPTY_FC;
+    liveSourceData.set(SRC_SEARCH, fc);
+    (this.mapService.instance?.getSource(SRC_SEARCH) as GeoJSONSource | undefined)?.setData(fc);
+  }
+
+  // ─── Dock: layers ─────────────────────────────────────────────────────────
+
+  /** Layers folded in the dock (still on, slider and legend hidden). */
+  readonly folded = signal<ReadonlySet<LayerId>>(new Set());
+
+  readonly layerRows = computed<LayerRow[]>(() => {
+    const t = this.i18n.t();
+    const ctx = this.styleCtx();
+    const folded = this.folded();
+    return LAYER_IDS.map(id => {
+      const group = GROUPS[id];
+      const on = ctx.layers.has(id);
+      const expanded = on && !folded.has(id);
+      const spec = expanded ? (group.slider?.(ctx) ?? null) : null;
+      return {
+        id,
+        title: t[LAYER_LABEL[id].title],
+        hint: t[LAYER_LABEL[id].hint],
+        on,
+        expanded,
+        slider: spec ? this.sliderView(spec) : null,
+        legend: expanded ? (group.legend?.(ctx) ?? null) : null
+      };
+    });
+  });
+
+  /** A layer switched on unfolds and the others fold, so its controls are in view without scrolling the dock. */
+  onLayer(id: LayerId, on: boolean) {
+    this.state.setLayer(id, on);
+    if (on) this.folded.set(new Set(LAYER_IDS.filter(l => l !== id)));
+  }
+
+  toggleExpanded(id: LayerId) {
+    this.folded.update(set => {
+      const next = new Set(set);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   readonly metricOptions = computed<DropdownOption<DistrictMetric>[]>(() => {
     const t = this.i18n.t();
     return DISTRICT_METRICS.map(m => ({ value: m, label: t[METRIC_LABEL[m]] }));
@@ -350,31 +457,39 @@ export class AppComponent implements AfterViewInit, OnDestroy {
     this.state.setDistrictMetric(metric);
   }
 
-  onPaletteChange(palette: CyberPalette | undefined) {
-    if (palette) this.state.setParam('cyberPalette', palette);
+  // ─── Sliders ──────────────────────────────────────────────────────────────
+
+  private sliderView(spec: SliderSpec): SliderView {
+    const raw = this.state.params()[spec.param];
+    const value = Math.min(spec.max, Math.max(spec.min, raw));
+    // The district threshold reads "all" at the start of the slider.
+    const neutral = spec.param === 'districtsThreshold' && value === spec.min;
+    const readout = neutral ? this.i18n.t().presetAll : this.formatValue(value, spec.param);
+    return {
+      spec,
+      value,
+      label: this.i18n.t()[SLIDER_LABEL[spec.param]],
+      readout,
+      markers: spec.presets.map(v => ({ id: String(v), value: v, label: this.formatValue(v, spec.param, true), active: v === value }))
+    };
   }
 
-  onSliderChange(value: number) {
-    this.state.setParam(this.slider().param, value);
+  onSliderChange(param: SliderParam, value: number) {
+    this.state.setParam(param, value);
   }
 
-  onMarkerClick(marker: TimelineMarker) {
-    const spec = this.slider();
-    // Clicking the active preset again releases the filter (bridges: back to "all", at the end of the slider).
-    const release = spec.param === 'bridgesMaxLength' ? spec.max : spec.min;
-    this.state.setParam(spec.param, marker.value === this.sliderValue() ? release : marker.value);
+  onMarkerClick(slider: SliderView, marker: TimelineMarker) {
+    const spec = slider.spec;
+    // Clicking the active preset again releases it (back to the start of the slider).
+    this.state.setParam(spec.param, marker.value === slider.value ? spec.min : marker.value);
   }
 
-  private formatValue(value: number, param: SliderParam): string {
+  private formatValue(value: number, param: SliderParam, short = false): string {
     const t = this.i18n.t();
     const nf = new Intl.NumberFormat(this.i18n.lang(), { maximumFractionDigits: 1 });
     switch (param) {
-      case 'cyberMinLevels':
-        return `${nf.format(value)} ${t.unitLevels}`;
       case 'walkMinutes':
         return `${nf.format(value)} ${t.unitMinutes}`;
-      case 'bridgesMaxLength':
-        return `${t.upTo} ${nf.format(value)} ${t.unitMeters}`;
       case 'transitRadius':
         return `${nf.format(value)} ${t.unitMeters}`;
       case 'districtsThreshold': {
@@ -382,6 +497,16 @@ export class AppComponent implements AfterViewInit, OnDestroy {
         return unit ? `${nf.format(value)} ${unit}` : nf.format(value);
       }
     }
+  }
+
+  // ─── Neon look of the dock ───────────────────────────────────────────────
+
+  /** On the styled maps (neon, sunset) the dock takes the palette's glass look, like the feature card. */
+  readonly neonDock = computed(() => this.state.palette() !== 'normal');
+
+  /** CSS reference to a colour role of the active styled palette (`--color-cy-<palette>-<role>`). */
+  cyberVar(role: CyberRole): string {
+    return `var(--color-${cyberToken(role, styledPalette(this.state.palette()))})`;
   }
 
   // ─── Glossary ─────────────────────────────────────────────────────────────
@@ -409,16 +534,20 @@ export class AppComponent implements AfterViewInit, OnDestroy {
     const dockEl = this.dock().nativeElement;
     const apply = () => {
       const top = headerEl.getBoundingClientRect().bottom + 12;
-      const bottom = window.innerHeight - dockEl.getBoundingClientRect().top + 12;
-      this.mapService.setHudPadding(Math.round(top), Math.round(bottom));
-      // Side HUD panels (district ranking) fit between the header and the dock.
+      const rect = dockEl.getBoundingClientRect();
+      // Phones: the dock is a bottom sheet; wider screens: a column on the left.
+      const sheet = rect.left < 16 && rect.width > window.innerWidth * 0.8;
+      const bottom = sheet ? window.innerHeight - rect.top + 12 : 12;
+      const left = sheet ? 0 : rect.right + 12;
+      this.mapService.setHudPadding(Math.round(top), Math.round(bottom), Math.round(left));
       const root = document.documentElement.style;
       root.setProperty('--hud-top', `${Math.round(top)}px`);
-      root.setProperty('--hud-bottom', `${Math.round(bottom)}px`);
+      root.setProperty('--hud-bottom', `${Math.round(sheet ? bottom : 12)}px`);
     };
     this.resizeObserver = new ResizeObserver(apply);
     this.resizeObserver.observe(headerEl);
     this.resizeObserver.observe(dockEl);
+    window.addEventListener('resize', apply);
     apply();
   }
 

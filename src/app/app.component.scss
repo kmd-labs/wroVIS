@@ -24,7 +24,7 @@
     z-index: 120;
 
     .header__settings,
-    .header__view {
+    .header__palette {
       opacity: 0;
       visibility: hidden;
       pointer-events: none;
@@ -32,31 +32,21 @@
     }
   }
 
-  &__left,
-  &__right {
+  &__left {
     display: flex;
     align-items: center;
     gap: 8px;
+    min-width: 0;
     pointer-events: auto;
   }
 
   &__settings,
-  &__view {
+  &__palette {
     display: inline-flex;
     align-items: center;
     padding: 4px;
     border-radius: radius("pill");
     transition: opacity transition("fast"), visibility transition("fast");
-  }
-
-  &__view {
-    width: 190px;
-  }
-
-  @include respond-to("mobile") {
-    &__view {
-      width: 150px;
-    }
   }
 }
 
@@ -65,78 +55,138 @@
   height: 100%;
 }
 
-.dock-wrap {
-  position: fixed;
-  bottom: var(--dock-offset-bottom);
-  left: var(--dock-offset-x);
-  right: var(--dock-offset-x);
-  display: flex;
-  justify-content: center;
-  pointer-events: none;
-  z-index: 20;
-}
+// ─── Left dock ──────────────────────────────────────────────────────────────
+// A column below the header on the left (user request: the dock moved from the bottom to the left).
+// On phones it becomes a bottom sheet that folds down to its search row.
 
 .dock {
-  pointer-events: auto;
+  position: fixed;
+  top: var(--hud-top, 76px);
+  bottom: var(--dock-offset-bottom);
+  left: var(--header-offset-x);
+  z-index: 20;
   display: flex;
-  align-items: stretch;
-  gap: 18px;
-  padding: 12px 18px 12px 16px;
-  width: min(880px, 100%);
+  flex-direction: column;
+  width: 340px;
+  max-height: calc(100vh - var(--hud-top, 76px) - var(--dock-offset-bottom));
+  height: fit-content;
+  border-radius: radius("panel");
   animation: panelSlideIn transition("slow");
 
-  &__main {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+  @include respond-to("tablet") {
+    width: 300px;
   }
 
-  &__head {
+  @include respond-to("mobile") {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-height: 58vh;
+    border-radius: radius("panel") radius("panel") 0 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+
+    &.dock--folded .dock__scroll {
+      display: none;
+    }
+  }
+
+  &__top {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 6px;
+    padding: 12px 12px 8px;
+  }
+
+  &__search {
+    flex: 1;
     min-width: 0;
   }
 
-  &__icon {
-    flex: none;
-    width: 28px;
-    height: 28px;
-    border-radius: radius("pill");
-    background: color("accent-glow-soft");
-    color: color("accent");
+  &__fold {
+    transition: transform transition("fast");
+
+    &--closed {
+      transform: rotate(180deg);
+    }
   }
 
-  &__titles {
+  &__scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0 12px 10px;
+  }
+
+  &__section {
     display: flex;
     flex-direction: column;
-    min-width: 0;
+    gap: 8px;
+    padding: 8px 0 12px;
+
+    & + & {
+      border-top: 1px solid color("line");
+    }
   }
 
-  &__title {
-    font-size: font-size("sm");
-    font-weight: font-weight("semibold");
-    color: color("text-bright");
-    line-height: 1.2;
-  }
-
-  &__desc {
+  &__heading {
+    margin: 0;
     font-size: font-size("xxs");
+    font-weight: font-weight("semibold");
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
     color: color("text-dim");
-    line-height: 1.3;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
+
+  &__note {
+    margin: 0;
+    font-size: font-size("xs");
+    line-height: 1.4;
+    color: color("text-desc");
+  }
+
+  // ─── Sliders ──────────────────────────────────────────────────────────────
 
   &__slider {
     display: flex;
     flex-direction: column;
     gap: 2px;
-    // Sits at the bottom of the dock: when the legend makes the dock taller, the spare room goes above the slider.
-    margin-top: auto;
+
+    // Room for the preset pills centred on the ends of the rail.
+    app-timeline-slider {
+      display: block;
+      padding: 0 16px;
+    }
+
+    // The design-system slider reserves 42 px on the right of the preset row for an action button (none here),
+    // while the track only gives up the 10 px gap, so the pills drifted off their ticks towards the right. The
+    // native thumb also travels between its radius (8 px) and width − 8 px, not 0–100 %. Rail ticks and pills
+    // are laid out over that same thumb travel, so a pill, its tick and the thumb at that value line up.
+    ::ng-deep .timeline-slider__events {
+      width: calc(100% - 10px - 16px);
+      margin-left: 8px;
+    }
+
+    ::ng-deep .timeline-slider__rail {
+      left: 8px;
+      right: 8px;
+    }
+
+    @include respond-to("mobile") {
+      ::ng-deep .timeline-slider__events {
+        width: 100%;
+        margin-left: 0;
+      }
+    }
+
+    @include respond-to("mobile-landscape") {
+      ::ng-deep .timeline-slider__events {
+        width: 100%;
+        margin-left: 0;
+      }
+    }
   }
 
   &__slider-head {
@@ -144,7 +194,6 @@
     align-items: baseline;
     justify-content: space-between;
     gap: 12px;
-    padding-right: 42px;
   }
 
   &__slider-label {
@@ -157,32 +206,18 @@
     font-size: font-size("xs");
     font-weight: font-weight("semibold");
     color: color("text-bright");
-    white-space: nowrap;
+    text-align: right;
   }
 
-  &__legend {
-    flex: none;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    width: 196px;
-    padding-left: 18px;
-    border-left: 1px solid color("line");
-  }
+  // ─── Walking reach ────────────────────────────────────────────────────────
 
   &__walk {
     min-height: 20px;
   }
 
-  &__walk-note {
-    margin: 0;
-    font-size: font-size("xs");
-    color: color("text-desc");
-  }
-
   &__walk-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px 12px;
     margin: 0;
     padding: 0;
@@ -228,26 +263,22 @@
     color: color("text-dim");
   }
 
-  @include respond-to("mobile") {
-    &__walk-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-  }
+  // ─── Route planner ────────────────────────────────────────────────────────
 
-  &__bike-row {
+  &__route-head {
     display: flex;
     align-items: flex-start;
-    gap: 16px;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  &__route-total {
+    display: flex;
+    flex-direction: column;
     min-width: 0;
   }
 
-  &__bike-total {
-    display: flex;
-    flex-direction: column;
-    flex: none;
-  }
-
-  &__bike-km {
+  &__route-km {
     font-family: var(--font-family-mono);
     font-size: font-size("lg");
     font-weight: font-weight("semibold");
@@ -255,149 +286,188 @@
     line-height: 1.1;
   }
 
-  &__bike-legs {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px 14px;
-    flex: 1;
-    min-width: 0;
-    max-height: 64px;
-    overflow-y: auto;
-    margin: 0;
-    padding: 2px 0 0;
-    list-style: none;
-    font-size: font-size("xs");
-
-    li {
-      display: inline-flex;
-      gap: 6px;
-      white-space: nowrap;
-    }
-  }
-
-  &__bike-leg-name {
+  &__route-caption {
+    font-size: font-size("xxs");
     color: color("text-dim");
   }
 
-  &__bike-leg-km {
-    font-family: var(--font-family-mono);
-    color: color("text-main");
-  }
-
-  &__bike-leg--broken &__bike-leg-km {
-    color: color("danger");
-  }
-
-  &__bike-actions {
+  &__route-actions {
     display: flex;
     flex: none;
     gap: 2px;
   }
 
-  &__legend--wide {
-    width: 300px;
+  &__route-legs {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 96px;
+    overflow-y: auto;
+    margin: 6px 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: font-size("xs");
+
+    li {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
   }
 
-  &__switcher {
-    flex: none;
-    margin-left: auto;
-  }
-
-  &__legend-title {
-    font-size: font-size("xxs");
-    font-weight: font-weight("semibold");
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+  &__route-leg-name {
     color: color("text-dim");
   }
 
-  @include respond-to("tablet") {
+  &__route-leg-km {
+    font-family: var(--font-family-mono);
+    color: color("text-main");
+  }
+
+  &__route-leg--broken &__route-leg-km {
+    color: color("danger");
+  }
+
+  // ─── Layers ───────────────────────────────────────────────────────────────
+
+  &__layer-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__layer {
+    border-radius: radius("sm");
+    transition: background transition("fast");
+
+    &--on {
+      background: color("surface-muted");
+    }
+  }
+
+  &__layer-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px 4px 8px;
+  }
+
+  &__layer-icon {
+    flex: none;
+    color: color("text-dim");
+  }
+
+  &__layer--on &__layer-icon {
+    color: color("accent");
+  }
+
+  &__layer-toggle {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__layer-expand {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: radius("pill");
+    background: transparent;
+    color: color("text-desc");
+    cursor: pointer;
+    transform: rotate(-90deg);
+    transition: transform transition("fast"), background transition("fast");
+
+    &--open {
+      transform: none;
+    }
+
+    &:hover {
+      background: color("surface-muted-strong");
+    }
+
+    &:focus-visible {
+      outline: 2px solid color("accent");
+      outline-offset: 1px;
+    }
+  }
+
+  // District measures: a scrollable list (about six rows visible) instead of a dropdown.
+  &__metrics {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    max-height: 190px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 3px;
+    border: 1px solid color("line");
+    border-radius: radius("sm");
+    background: color("panel-bg-solid");
+  }
+
+  &__metric {
+    flex: none;
+    padding: 5px 8px;
+    border: 0;
+    border-radius: radius("xs");
+    background: transparent;
+    font: inherit;
+    font-size: font-size("xs");
+    text-align: left;
+    color: color("text-main");
+    cursor: pointer;
+
+    &:hover {
+      background: color("surface-muted");
+    }
+
+    &--active {
+      background: color("accent-glow-soft");
+      color: color("text-bright");
+      font-weight: font-weight("semibold");
+    }
+
+    &:focus-visible {
+      outline: 2px solid color("accent");
+      outline-offset: -2px;
+    }
+  }
+
+  &__layer-body {
+    display: flex;
     flex-direction: column;
     gap: 10px;
+    padding: 2px 10px 10px;
+  }
 
-    &__legend {
-      width: auto;
-      padding-left: 0;
-      padding-top: 10px;
-      border-left: 0;
-      border-top: 1px solid color("line");
+  &__layer-tools {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+
+    app-dropdown {
+      flex: 1;
+      min-width: 0;
     }
   }
 
-  @include respond-to("mobile") {
-    padding: 10px 12px;
-
-    &__desc,
-    &__legend-title {
-      display: none;
-    }
-
-    &__slider-head {
-      padding-right: 40px;
-    }
-  }
-
-  @include respond-to("mobile-landscape") {
-    flex-direction: row;
-    padding: 8px 12px;
-
-    &__head {
-      display: none;
-    }
-
-    &__legend {
-      display: none;
-    }
+  &__footer {
+    display: flex;
+    justify-content: flex-start;
+    padding-top: 4px;
+    border-top: 1px solid color("line");
   }
 }
 
-// ─── Neon View: "neon glass" dock ───────────────────────────────────────────
-// Same look as the Neon View feature card (cyber-scan-card.component.scss). The dock redefines the colour
-// tokens its children read, so the design-system slider, switcher, buttons and legend pills follow the palette.
-// --neon-accent / --neon-hl / --neon-bg / --neon-ink come from the active neon palette (--color-cy-*).
-.dock.dock--neon {
-  --color-text-bright: var(--neon-ink);
-  --color-text-main: color-mix(in srgb, var(--neon-ink) 88%, transparent);
-  --color-text-desc: color-mix(in srgb, var(--neon-ink) 70%, transparent);
-  --color-text-dim: color-mix(in srgb, var(--neon-ink) 55%, transparent);
-  --color-line: color-mix(in srgb, var(--neon-accent) 38%, transparent);
-  --color-line-strong: var(--neon-accent);
-  --color-panel-bg: color-mix(in srgb, var(--neon-bg) 90%, transparent);
-  --color-panel-bg-solid: var(--neon-bg);
-  --color-surface-muted: color-mix(in srgb, var(--neon-accent) 16%, transparent);
-  --color-surface-muted-strong: color-mix(in srgb, var(--neon-ink) 22%, transparent);
-  --color-accent: var(--neon-hl);
-  --color-accent-glow-soft: color-mix(in srgb, var(--neon-hl) 18%, transparent);
-  --color-switcher-active-bg: color-mix(in srgb, var(--neon-accent) 30%, var(--neon-bg));
-  --color-slider-thumb-bg: var(--neon-bg);
-  --color-btn-bg: color-mix(in srgb, var(--neon-ink) 6%, transparent);
-  --color-btn-hover: color-mix(in srgb, var(--neon-accent) 22%, transparent);
-  --color-shadow-panel: transparent;
-
-  color: var(--neon-ink);
-  // Gradient outline (palette accent → highlight) over dark glass, soft coloured shadow, KMD panel radius.
-  border: 1px solid transparent;
-  background:
-    linear-gradient(color-mix(in srgb, var(--neon-bg) 92%, transparent), color-mix(in srgb, var(--neon-bg) 92%, transparent)) padding-box,
-    linear-gradient(135deg, var(--neon-accent), var(--neon-hl)) border-box;
-  box-shadow: 0 14px 44px color-mix(in srgb, var(--neon-accent) 24%, transparent);
-
-  .dock__icon {
-    background: color-mix(in srgb, var(--neon-accent) 18%, transparent);
-    color: var(--neon-accent);
-  }
-
-  .dock__legend {
-    border-left-color: color-mix(in srgb, var(--neon-ink) 14%, transparent);
-  }
-
-  .dock__value {
-    color: var(--neon-hl);
-  }
-
-  @include respond-to("tablet") {
-    .dock__legend {
-      border-top-color: color-mix(in srgb, var(--neon-ink) 14%, transparent);
-    }
-  }
+// The styled palettes (neon, sunset) give the dock the shared `.palette-glass` look (styles.scss).
+.dock.palette-glass .dock__value {
+  color: var(--neon-hl);
 }

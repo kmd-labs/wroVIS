@@ -1,13 +1,13 @@
 @use "variables" as *;
 
-// Left HUD panel of the districts view, between the header (--hud-top) and the dock (--hud-bottom),
-// both measured by AppComponent. On phones it becomes a bottom sheet over the dock.
+// Right HUD panel of the districts layer, below the header (--hud-top, measured by AppComponent); the dock
+// sits on the left. On phones it becomes a bottom sheet over the dock.
 
 .ranking {
   position: fixed;
   top: var(--hud-top, 76px);
-  bottom: var(--hud-bottom, 180px);
-  left: var(--header-offset-x);
+  bottom: var(--dock-offset-bottom);
+  right: var(--header-offset-x);
   z-index: 18;
   display: flex;
   flex-direction: column;

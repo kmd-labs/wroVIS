@@ -11,10 +11,20 @@ export interface DetailRow {
   mono?: boolean;
 }
 
+/** Shops, restaurants and other places inside a building, grouped by category. */
+export interface PlaceGroup {
+  label: string;
+  items: { name: string; /** Raw OSM value (e.g. `bakery`), shown in the monospaced face. */ tag: string }[];
+}
+
 export interface FeatureDescription {
   title: string;
   subtitle: string;
   rows: DetailRow[];
+  /** Places inside a building (pipeline property `pois`), grouped by category. */
+  places?: PlaceGroup[];
+  /** Number of places inside, including those beyond the listed ones. */
+  placeCount?: number;
   osmUrl: string | null;
   /** Wikipedia article of the object, when tagged in OSM. */
   wikiUrl?: string | null;
@@ -49,6 +59,38 @@ const PLACE_LABEL: Record<string, keyof Dict> = {
   tram: 'placeTram',
   park: 'placePark'
 };
+
+/** POI categories of the pipeline (`cat` in `pois`) and their labels, in the order the card lists them. */
+const POI_CAT_LABEL: Record<string, keyof Dict> = {
+  shop: 'placeShop',
+  food: 'placeFood',
+  health: 'placeHealth',
+  finance: 'poiFinance',
+  public: 'poiPublic',
+  education: 'placeEducation',
+  culture: 'poiCulture',
+  sport: 'poiSport',
+  worship: 'poiWorship',
+  transport: 'poiTransport'
+};
+
+/** Parses `cat|sub|name;…` into category groups (order kept from the pipeline). */
+function placeGroups(raw: string, t: Dict): PlaceGroup[] {
+  const groups = new Map<string, PlaceGroup>();
+  for (const entry of raw.split(';')) {
+    const [cat, sub = '', name = ''] = entry.split('|');
+    if (!cat) continue;
+    const key = POI_CAT_LABEL[cat] ? cat : 'shop';
+    let group = groups.get(key);
+    if (!group) {
+      group = { label: t[POI_CAT_LABEL[key]], items: [] };
+      groups.set(key, group);
+    }
+    const tag = sub.replace(/_/g, ' ');
+    group.items.push({ name: name || tag, tag: name ? tag : '' });
+  }
+  return [...groups.values()];
+}
 
 /** District rows shown in the details popup: property, label key, unit and whether a city median exists. */
 const DISTRICT_ROWS: { key: DistrictNumericKey; label: keyof Dict; unit?: string; digits?: number }[] = [
@@ -99,13 +141,9 @@ export function describeFeature(pick: PickedFeature, t: Dict, lang: Lang, stats:
       const more = typeof p['addr_more'] === 'number' ? p['addr_more'] : 0;
       rows.unshift({ label: t.propAddress, value: addresses.join(', '), note: more ? `${t.andMore} ${more}` : undefined });
     }
-    // Shops and services whose point lies inside the outline.
+    // Shops and services whose point lies inside the outline: listed by category below the rows.
     const poiCount = typeof p['poi_n'] === 'number' ? p['poi_n'] : 0;
-    if (poiCount) {
-      const names = str(p['poi']).split('; ').filter(Boolean);
-      const countLabel = `${nf().format(poiCount)} ${t.unitPlaces}`;
-      rows.push({ label: t.propInside, value: names.length ? names.join(', ') : countLabel, note: names.length ? countLabel : undefined });
-    }
+    const places = str(p['pois']) ? placeGroups(str(p['pois']), t) : [];
     if (str(p['architect'])) rows.push({ label: t.propArchitect, value: str(p['architect']) });
     if (str(p['style'])) rows.push({ label: t.propStyle, value: str(p['style']), mono: true });
     if (p['heritage']) {
@@ -114,7 +152,7 @@ export function describeFeature(pick: PickedFeature, t: Dict, lang: Lang, stats:
     }
 
     const subtitle = levels !== null ? `${classLabel} · ${nf().format(levels)} ${t.unitStoreysShort}` : classLabel;
-    return { title: name || addresses[0] || t.inspBuilding, subtitle, rows, osmUrl, wikiUrl: str(p['wiki']) || null };
+    return { title: name || addresses[0] || t.inspBuilding, subtitle, rows, places, placeCount: poiCount, osmUrl, wikiUrl: str(p['wiki']) || null };
   }
 
   if (id.startsWith('br-')) {

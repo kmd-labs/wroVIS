@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, input } from '@an
 import { I18nService } from '../../core/i18n/i18n.service';
 import { AppState } from '../../core/state/app.state';
 import type { Dict } from '../../core/i18n/i18n.types';
-import { METRIC_FORMAT, type DistrictMetric, type LegendSpec } from '../../core/map/map.types';
+import { METRIC_FORMAT, type DistrictMetric, type LegendGroup, type LegendSpec } from '../../core/map/map.types';
 
 export const METRIC_LABEL: Record<DistrictMetric, keyof Dict> = {
   buildings_per_km2: 'metricBuildingsPerKm2',
@@ -81,6 +81,8 @@ export class LegendComponent {
   readonly i18n = inject(I18nService);
   private readonly state = inject(AppState);
   readonly spec = input.required<LegendSpec>();
+  /** Layer group or tool the entries belong to (namespace of the switched-off entries). */
+  readonly group = input.required<LegendGroup>();
 
   readonly categorical = computed(() => {
     const spec = this.spec();
@@ -88,11 +90,11 @@ export class LegendComponent {
   });
 
   isOff(key: string): boolean {
-    return this.state.hiddenLegend().has(`${this.state.currentView()}:${key}`);
+    return this.state.hiddenLegend().has(`${this.group()}:${key}`);
   }
 
   toggle(key: string) {
-    this.state.toggleLegend(this.state.currentView(), key);
+    this.state.toggleLegend(this.group(), key);
   }
 
   readonly wide = computed(() => {
